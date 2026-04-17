@@ -3,7 +3,7 @@ const TelegramBot = require("node-telegram-bot-api");
 
 const app = express();
 
-// разрешаем запросы с сайта
+// CORS + JSON
 app.use(express.json());
 app.use((req, res, next) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -11,92 +11,47 @@ app.use((req, res, next) => {
   next();
 });
 
-const token = process.env.BOT_TOKEN;
+// боты
+const mainBot = new TelegramBot(process.env.BOT_TOKEN, { polling: true });
+const enterBot = new TelegramBot(process.env.ENTER_BOT_TOKEN, { polling: true });
+
 const adminId = process.env.ADMIN_CHAT_ID;
 
-const bot = new TelegramBot(token, { polling: true });
-
-console.log("SERVER + BOT STARTED");
-
-// база (в памяти)
+// база
 let bannedUsers = {};
 let requests = {};
 
-// получить свой ID
-bot.onText(/\/id/, (msg) => {
-  bot.sendMessage(msg.chat.id, "Твой ID: " + msg.chat.id);
+// === ВХОД НА САЙТ ===
+app.post("/enter", (req, res) => {
+  enterBot.sendMessage(adminId, "👀 Новый переход!");
+  res.json({ ok: true });
 });
 
-// тест кнопок
-bot.onText(/\/test/, (msg) => {
-  const id = Date.now();
-
-  requests[id] = "test";
-
-  bot.sendMessage(adminId, "🆕 Тест заявка ID: " + id, {
-    reply_markup: {
-      inline_keyboard: [
-        [
-          { text: "🚫 Бан", callback_data: "ban_" + id },
-          { text: "✅ Разбан", callback_data: "unban_" + id }
-        ],
-        [
-          { text: "➡️ Разрешить", callback_data: "allow_" + id }
-        ]
-      ]
-    }
-  });
-});
-
-// кнопки
-bot.on("callback_query", (q) => {
-  const data = q.data;
-  const id = data.split("_")[1];
-
-  const phone = requests[id];
-
-  if (!phone) {
-    return bot.answerCallbackQuery(q.id, { text: "нет данных" });
-  }
-
-  if (data.startsWith("ban")) {
-    bannedUsers[phone] = true;
-    bot.answerCallbackQuery(q.id, { text: "🚫 забанен " + phone });
-  }
-
-  if (data.startsWith("unban")) {
-    delete bannedUsers[phone];
-    bot.answerCallbackQuery(q.id, { text: "✅ разбан " + phone });
-  }
-
-  if (data.startsWith("allow")) {
-    bot.answerCallbackQuery(q.id, { text: "➡️ разрешено" });
-  }
-});
-
-// ПРИЕМ С САЙТА
+// === ПРИЕМ ЗАЯВОК ===
 app.post("/send", (req, res) => {
   const data = req.body;
 
-  console.log("ПРИШЛО:", data);
-
   // проверка бана
   if (bannedUsers[data.phone]) {
-    console.log("ЗАБЛОКИРОВАН:", data.phone);
     return res.json({ ok: false });
   }
 
   const id = Date.now();
 
-  // сохраняем связь ID → телефон
+  // сохраняем связь
   requests[id] = data.phone;
 
-  bot.sendMessage(
+  mainBot.sendMessage(
     adminId,
     `🆕 ЗАЯВКА ID: ${id}
 
+📦 Услуга: ${data.service}
+
 👤 Имя: ${data.name}
-📞 Телефон: ${data.phone}`,
+📞 Телефон: ${data.phone}
+📧 Email: ${data.email}
+🏙 Город: ${data.city}
+💬 Комментарий: ${data.comment}`,
     {
       reply_markup: {
         inline_keyboard: [
@@ -115,7 +70,33 @@ app.post("/send", (req, res) => {
   res.json({ ok: true });
 });
 
-// проверка сервера
+// === КНОПКИ ===
+mainBot.on("callback_query", (q) => {
+  const data = q.data;
+  const id = data.split("_")[1];
+
+  const phone = requests[id];
+
+  if (!phone) {
+    return mainBot.answerCallbackQuery(q.id, { text: "нет данных" });
+  }
+
+  if (data.startsWith("ban")) {
+    bannedUsers[phone] = true;
+    mainBot.answerCallbackQuery(q.id, { text: "🚫 забанен " + phone });
+  }
+
+  if (data.startsWith("unban")) {
+    delete bannedUsers[phone];
+    mainBot.answerCallbackQuery(q.id, { text: "✅ разбан " + phone });
+  }
+
+  if (data.startsWith("allow")) {
+    mainBot.answerCallbackQuery(q.id, { text: "➡️ разрешено" });
+  }
+});
+
+// проверка
 app.get("/", (req, res) => {
   res.send("ok");
 });
