@@ -53,7 +53,26 @@ bot.on("callback_query", (q) => {
   if (q.data.startsWith("ban")) text = "🚫 пользователь забанен";
   if (q.data.startsWith("unban")) text = "✅ пользователь разбанен";
   if (q.data.startsWith("allow")) text = "➡️ СМС/КОД";
+if (q.data === "admin_requests") {
+  const list = Object.entries(users)
+    .map(([id, u]) => `ID ${id} → ${u.userId}`)
+    .join("\n") || "пусто";
 
+  return bot.sendMessage(q.message.chat.id, list);
+}
+
+if (q.data === "admin_bans") {
+  const list = Object.keys(banned).join("\n") || "нет банов";
+
+  return bot.sendMessage(q.message.chat.id, list);
+}
+
+if (q.data === "admin_stats") {
+  return bot.sendMessage(
+    q.message.chat.id,
+    `Заявки: ${Object.keys(users).length}\nБаны: ${Object.keys(banned).length}`
+  );
+}
   bot.answerCallbackQuery(q.id, { text });
 });
 
