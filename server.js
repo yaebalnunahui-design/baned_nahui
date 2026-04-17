@@ -12,6 +12,20 @@ console.log("STARTED");
 // ответ на сообщения
 bot.on("message", (msg) => {
   if (msg.text === "/test") {
+  ...
+}
+
+if (msg.text === "/admin") {
+  return bot.sendMessage(msg.chat.id, "🧠 Панель", {
+    reply_markup: {
+      inline_keyboard: [
+        [{ text: "📋 Заявки", callback_data: "admin_requests" }],
+        [{ text: "🚫 Баны", callback_data: "admin_bans" }],
+        [{ text: "📊 Статистика", callback_data: "admin_stats" }]
+      ]
+    }
+  });
+}
     bot.sendMessage(msg.chat.id, "🆕 Заявка №" + Date.now(), {
       reply_markup: {
         inline_keyboard: [
