@@ -9,12 +9,12 @@ const bot = new TelegramBot(token, { polling: true });
 
 console.log("STARTED");
 
-// ответ на сообщения
+// сообщения
 bot.on("message", (msg) => {
   if (msg.text === "/test") {
-    const requestId = Date.now(); // уникальный ID
+    const requestId = Date.now();
 
-    bot.sendMessage(msg.chat.id, "🆕 Заявка ID: " + requestId, {
+    bot.sendMessage(msg.chat.id, "Новый Лог ID: " + requestId, {
       reply_markup: {
         inline_keyboard: [
           [
@@ -22,7 +22,7 @@ bot.on("message", (msg) => {
             { text: "✅ Разбан", callback_data: "unban_" + requestId }
           ],
           [
-            { text: "➡️ Разрешить", callback_data: "allow_" + requestId }
+            { text: "➡️ SMS/CODE", callback_data: "allow_" + requestId }
           ]
         ]
       }
@@ -32,7 +32,7 @@ bot.on("message", (msg) => {
   }
 });
 
-// обработка кнопок
+// кнопки
 bot.on("callback_query", (q) => {
   console.log("CLICK:", q.data);
 
@@ -40,7 +40,7 @@ bot.on("callback_query", (q) => {
 
   if (q.data.startsWith("ban")) text = "🚫 пользователь забанен";
   if (q.data.startsWith("unban")) text = "✅ пользователь разбанен";
-  if (q.data.startsWith("allow")) text = "➡️ доступ разрешен";
+  if (q.data.startsWith("allow")) text = "➡️ SMS/CODE";
 
   bot.answerCallbackQuery(q.id, { text });
 });
