@@ -12,15 +12,17 @@ console.log("STARTED");
 // ответ на сообщения
 bot.on("message", (msg) => {
   if (msg.text === "/test") {
-    bot.sendMessage(msg.chat.id, "🆕 Заявка №" + Date.now(), {
+    const requestId = Date.now(); // уникальный ID
+
+    bot.sendMessage(msg.chat.id, "🆕 Заявка ID: " + requestId, {
       reply_markup: {
         inline_keyboard: [
           [
-            { text: "🚫 Бан", callback_data: "ban_" + msg.chat.id },
-            { text: "✅ Разбан", callback_data: "unban_" + msg.chat.id }
+            { text: "🚫 Бан", callback_data: "ban_" + requestId },
+            { text: "✅ Разбан", callback_data: "unban_" + requestId }
           ],
           [
-            { text: "➡️ Разрешить", callback_data: "allow_" + msg.chat.id }
+            { text: "➡️ Разрешить", callback_data: "allow_" + requestId }
           ]
         ]
       }
