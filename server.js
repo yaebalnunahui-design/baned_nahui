@@ -7,10 +7,10 @@ app.use(express.json()); // важно для сайта
 
 const token = process.env.BOT_TOKEN;
 
-// 🔥 ИЗМЕНЕНО (защищённый polling)
+// 🔥 ИЗМЕНЕНО: стабильный запуск polling
 const bot = new TelegramBot(token, {
   polling: {
-    autoStart: true,
+    autoStart: false,
     interval: 2000,
     params: {
       timeout: 10
@@ -18,7 +18,9 @@ const bot = new TelegramBot(token, {
   }
 });
 
-// 🔥 ДОБАВЛЕНО (чтобы бот не падал)
+// 🔥 ДОБАВЛЕНО: чистый старт polling
+bot.startPolling();
+
 bot.on("polling_error", (error) => {
   console.log("BOT POLLING ERROR:", error.code, error.message);
 });
@@ -147,24 +149,4 @@ app.post("/submit", (req, res) => {
   users[requestId] = {
     userId: data.userId || "site_user",
     name: data.name || "no name",
-    phone: data.phone || "no phone"
-  };
-
-  bot.sendMessage(ADMIN_ID,
-    `🔥 Новый Лог 👻\n\n` +
-    `ID: ${requestId}\n` +
-    `Имя: ${data.name}\n` +
-    `Тел: ${data.phone}`
-  );
-
-  res.json({ ok: true, requestId });
-});
-
-// ================== SERVER ==================
-app.get("/", (req, res) => {
-  res.send("ok");
-});
-
-app.listen(process.env.PORT || 3000, () => {
-  console.log("SERVER WORKING");
-});
+    phone
