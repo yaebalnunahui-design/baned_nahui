@@ -15,19 +15,6 @@ const mainBot = new TelegramBot(process.env.BOT_TOKEN, { polling: true });
 const enterBot = new TelegramBot(process.env.ENTER_BOT_TOKEN, { polling: true });
 const workerBot = new TelegramBot(process.env.WORKER_BOT_TOKEN, { polling: true });
 
-// ===== FIX 409 CONFLICT (Railway) =====
-(async () => {
-  try {
-    await mainBot.deleteWebHook();
-    await enterBot.deleteWebHook();
-    await workerBot.deleteWebHook();
-  } catch (e) {
-    console.log("Webhook cleanup error:", e.message);
-  }
-
-  console.log("Bots initialized safely");
-})();
-
 // ===== ENV =====
 const adminId = Number(process.env.ADMIN_CHAT_ID);
 const workerChat = Number(process.env.WORKER_CHAT_ID);
@@ -155,6 +142,7 @@ workerBot.on("callback_query", async (q) => {
   const data = q.data;
   const id = data.split("_")[1];
 
+  // ===== ЗАБРАТЬ =====
   if (data.startsWith("take")) {
 
     if (takenRequests[id]) {
@@ -193,10 +181,12 @@ workerBot.on("callback_query", async (q) => {
     });
   }
 
+  // ===== ОСВОБОДИТЬ =====
   if (data.startsWith("free")) {
 
     if (!takenRequests[id]) return;
 
+    // 🔥 только тот кто забрал
     if (takenRequests[id].tgId !== q.from.id) {
       return workerBot.answerCallbackQuery(q.id, {
         text: "❌ Не твоя заявка"
@@ -223,7 +213,6 @@ workerBot.on("callback_query", async (q) => {
   }
 });
 
-// ===== СЕРВЕР =====
 app.listen(process.env.PORT || 3000, () => {
   console.log("SERVER OK");
 });
