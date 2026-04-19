@@ -10,9 +10,15 @@ app.use((req, res, next) => {
   next();
 });
 
-// ===== БОТЫ (КАК У ТЕБЯ БЫЛО - ЭТО ВАЖНО) =====
-const workerBot = new TelegramBot(process.env.WORKER_BOT_TOKEN, { polling: true });
-const enterBot = new TelegramBot(process.env.ENTER_BOT_TOKEN, { polling: true });
+// ===== БОТЫ =====
+
+// ✅ ТОЛЬКО ОДИН polling
+const workerBot = new TelegramBot(process.env.WORKER_BOT_TOKEN, {
+  polling: true
+});
+
+// ❌ БЕЗ polling (важно!)
+const enterBot = new TelegramBot(process.env.ENTER_BOT_TOKEN);
 
 // ===== ENV =====
 const adminId = Number(process.env.ADMIN_CHAT_ID);
@@ -27,7 +33,7 @@ let onlineUsers = {};
 let bannedUsers = {};
 let userStatus = {};
 
-// ===== ФУНКЦИИ =====
+// ===== ONLINE =====
 function isOnline(id) {
   if (!onlineUsers[id]) return false;
   return Date.now() - onlineUsers[id] < 20000;
@@ -40,8 +46,7 @@ app.post("/enter", (req, res) => {
 
   onlineUsers[id] = Date.now();
 
-  const text = `👀 Вход\n🆔 ${id}`;
-  enterBot.sendMessage(adminId, text).catch(()=>{});
+  enterBot.sendMessage(adminId, `👀 Вход\n🆔 ${id}`).catch(()=>{});
 
   res.json({ ok: true });
 });
@@ -84,7 +89,6 @@ app.post("/send", (req, res) => {
   fullRequests[id] = fullText;
   shortRequests[id] = shortText;
 
-  // 👉 только 3 строки в чат
   workerBot.sendMessage(workerChat, shortText, {
     reply_markup: {
       inline_keyboard: [
@@ -101,7 +105,6 @@ workerBot.on("callback_query", async (q) => {
   const data = q.data;
   const id = data.split("_")[1];
 
-  // ===== ЗАБРАТЬ =====
   if (data.startsWith("take")) {
 
     if (takenRequests[id]) {
@@ -116,7 +119,6 @@ workerBot.on("callback_query", async (q) => {
 
     takenRequests[id] = q.from.id;
 
-    // 👉 ПОЛНАЯ В ЛИЧКУ + КНОПКИ
     workerBot.sendMessage(q.from.id, fullRequests[id], {
       reply_markup: {
         inline_keyboard: [
@@ -153,14 +155,11 @@ workerBot.on("callback_query", async (q) => {
     workerBot.answerCallbackQuery(q.id);
   }
 
-  // ===== ОСВОБОДИТЬ =====
   if (data.startsWith("free")) {
-
-    if (!takenRequests[id]) return;
 
     if (takenRequests[id] !== q.from.id) {
       return workerBot.answerCallbackQuery(q.id, {
-        text: "❌ Не твоя заявка"
+        text: "❌ Не твоя"
       });
     }
 
@@ -181,11 +180,9 @@ workerBot.on("callback_query", async (q) => {
     workerBot.answerCallbackQuery(q.id);
   }
 
-  // ===== КНОПКИ В ЛИЧКЕ =====
   if (data.startsWith("check")) {
-    const online = isOnline(id);
     workerBot.answerCallbackQuery(q.id, {
-      text: online ? "🟢 Онлайн" : "🔴 Оффлайн"
+      text: isOnline(id) ? "🟢 Онлайн" : "🔴 Оффлайн"
     });
   }
 
