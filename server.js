@@ -18,7 +18,7 @@ app.use((req, res, next) => {
   next();
 });
 
-// ===== БОТ =====
+// ===== БОТЫ =====
 const workerBot = new TelegramBot(process.env.WORKER_BOT_TOKEN, {
   polling: true
 });
@@ -66,11 +66,20 @@ function isOnline(id) {
   return onlineUsers[id] && Date.now() - onlineUsers[id] < 20000;
 }
 
-// ===== СОХРАНЯЕМ ЮЗЕРОВ =====
-workerBot.on("message", (msg) => {
-  if (msg.from.username) {
-    usersByUsername[msg.from.username.toLowerCase()] = msg.chat.id;
+// ===== РЕГИСТРАЦИЯ ЮЗЕРА (FIX) =====
+workerBot.onText(/\/start/, (msg) => {
+  const username = msg.from.username;
+  const id = msg.chat.id;
+
+  if (!username) {
+    return safeSend(workerBot, id, "❌ У тебя нет username в Telegram");
   }
+
+  usersByUsername[username.toLowerCase()] = id;
+
+  console.log("REGISTER:", username, id);
+
+  safeSend(workerBot, id, "✅ Ты зарегистрирован");
 });
 
 // ===== ПРОВЕРКА МОДЕРА =====
@@ -88,7 +97,7 @@ workerBot.onText(/\/addmod @(.+)/, (msg, match) => {
   const id = usersByUsername[username];
 
   if (!id) {
-    return safeSend(workerBot, adminId, "❌ Он не писал боту");
+    return safeSend(workerBot, adminId, "❌ Он не писал боту /start");
   }
 
   if (!moderators.includes(id)) {
@@ -200,7 +209,7 @@ app.post("/send2", async (req, res) => {
   const owner = takenRequests[id];
 
   if (owner) {
-    await safeSend(workerBot, owner, `📩 ДОП\n🆔 ${id}\n💬 ${value}`);
+    await safeSend(workerBot, owner, `📩 ДОП ДАННЫЕ\n🆔 ${id}\n💬 ${value}`);
   }
 
   res.json({ ok: true });
@@ -215,7 +224,7 @@ workerBot.on("callback_query", async (q) => {
     return workerBot.answerCallbackQuery(q.id, { text: "❌ Нет доступа" });
   }
 
-  // забрать
+  // ===== ЗАБРАТЬ =====
   if (data.startsWith("take")) {
 
     if (takenRequests[id]) {
@@ -243,51 +252,63 @@ workerBot.on("callback_query", async (q) => {
 
     if (sent) fullMessages[id] = sent.message_id;
 
-    await safeEdit(workerBot, workerChat, groupMessages[id],
+    await safeEdit(
+      workerBot,
+      workerChat,
+      groupMessages[id],
       `${shortRequests[id]}
 
-👤 Взял: ${user}`, {
-      reply_markup: {
-        inline_keyboard: [
-          [{ text: "🔓 Освободить", callback_data: "free_" + id }]
-        ]
+👤 Взял: ${user}`,
+      {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "🔓 Освободить", callback_data: "free_" + id }]
+          ]
+        }
       }
-    });
+    );
 
     workerBot.answerCallbackQuery(q.id);
   }
 
-  // освободить
+  // ===== ОСВОБОДИТЬ =====
   if (data.startsWith("free")) {
 
     if (takenRequests[id] !== q.from.id) {
-      return workerBot.answerCallbackQuery(q.id, { text: "❌ Не твоя" });
+      return workerBot.answerCallbackQuery(q.id, {
+        text: "❌ Не твоя"
+      });
     }
 
     delete takenRequests[id];
 
     await safeDelete(workerBot, q.from.id, fullMessages[id]);
 
-    await safeEdit(workerBot, workerChat, groupMessages[id],
-      shortRequests[id], {
-      reply_markup: {
-        inline_keyboard: [
-          [{ text: "📥 Забрать", callback_data: "take_" + id }]
-        ]
+    await safeEdit(
+      workerBot,
+      workerChat,
+      groupMessages[id],
+      shortRequests[id],
+      {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "📥 Забрать", callback_data: "take_" + id }]
+          ]
+        }
       }
-    });
+    );
 
     workerBot.answerCallbackQuery(q.id, { text: "Освобождено" });
   }
 
-  // онлайн
+  // ===== ОНЛАЙН =====
   if (data.startsWith("check")) {
     workerBot.answerCallbackQuery(q.id, {
       text: isOnline(id) ? "🟢 Онлайн" : "🔴 Оффлайн"
     });
   }
 
-  // бан
+  // ===== БАН =====
   if (data.startsWith("ban")) {
     bannedUsers[id] = true;
     workerBot.answerCallbackQuery(q.id);
@@ -298,7 +319,7 @@ workerBot.on("callback_query", async (q) => {
     workerBot.answerCallbackQuery(q.id);
   }
 
-  // дальше
+  // ===== ДАЛЬШЕ =====
   if (data.startsWith("allow")) {
     userStatus[id] = "next";
     workerBot.answerCallbackQuery(q.id);
