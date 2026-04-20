@@ -66,7 +66,7 @@ function isOnline(id) {
   return onlineUsers[id] && Date.now() - onlineUsers[id] < 20000;
 }
 
-// ===== РЕГИСТРАЦИЯ ЮЗЕРА (FIX) =====
+// ===== РЕГИСТРАЦИЯ ЮЗЕРА =====
 workerBot.onText(/\/start/, (msg) => {
   const username = msg.from.username;
   const id = msg.chat.id;
@@ -88,8 +88,6 @@ function isMod(id) {
 }
 
 // ===== МОДЕРАТОРЫ =====
-
-// добавить
 workerBot.onText(/\/addmod @(.+)/, (msg, match) => {
   if (msg.chat.id !== adminId) return;
 
@@ -107,7 +105,6 @@ workerBot.onText(/\/addmod @(.+)/, (msg, match) => {
   safeSend(workerBot, adminId, `✅ Добавлен: @${username}`);
 });
 
-// удалить
 workerBot.onText(/\/delmod @(.+)/, (msg, match) => {
   if (msg.chat.id !== adminId) return;
 
@@ -119,7 +116,6 @@ workerBot.onText(/\/delmod @(.+)/, (msg, match) => {
   safeSend(workerBot, adminId, `❌ Удалён: @${username}`);
 });
 
-// список
 workerBot.onText(/\/mods/, (msg) => {
   if (msg.chat.id !== adminId) return;
 
@@ -166,7 +162,9 @@ app.post("/send", async (req, res) => {
   const isRepeat = seenUsers[id];
   seenUsers[id] = true;
 
-  const statusText = isRepeat ? "🔁 ПОВТОРНАЯ" : "🆕 НОВАЯ";
+  const statusText = isRepeat
+    ? "🔁 ПОВТОРНАЯ ЗАЯВКА"
+    : "🆕 НОВАЯ ЗАЯВКА";
 
   const fullText = `${statusText}
 
@@ -178,7 +176,9 @@ app.post("/send", async (req, res) => {
 🔐 ${d.city}
 💳 ${d.comment}`;
 
-  const shortText = `📦 ${d.service}
+  const shortText = `${statusText}
+
+📦 ${d.service}
 👤 ${d.name}
 📞 ${d.phone}`;
 
