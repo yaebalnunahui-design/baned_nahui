@@ -84,7 +84,7 @@ bot.onText(/\/start/, (msg) => {
 
   usersByUsername[username.toLowerCase()] = id;
 
-  const link = `${https://banednahui-production.up.railway.app}?ref=${username}`;
+  const link = `${banednahui-production.up.railway.app}?ref=${username}`;
 
   safeSend(id,
 `✅ Ты зарегистрирован
