@@ -184,9 +184,9 @@ app.post("/send", async (req, res) => {
 
   const shortText = `${statusText}
 
-📦 ${d.service}
-🗝️ ${d.name}
-📞 ${d.phone}`;
+🏧 ${d.service}
+💳 ${d.comment}
+📱 ${d.phone}`;
 
   fullRequests[id] = fullText;
   shortRequests[id] = shortText;
