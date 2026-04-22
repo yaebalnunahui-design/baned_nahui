@@ -60,7 +60,8 @@ let seenUsers = {};
 let onlineUsers = {};
 let bannedUsers = {};
 let userStatus = {};
-let extraSentUsers = {}; // 🔥 антиспам
+let extraSentUsers = {};
+let userRef = {}; // 🔥 КТО ПРИВЁЛ
 
 // ===== ONLINE =====
 function isOnline(id) {
@@ -137,10 +138,18 @@ workerBot.onText(/\/mods/, (msg) => {
 // ===== ВХОД =====
 app.post("/enter", async (req, res) => {
   const id = req.body.clientId;
+  const ref = req.body.ref; // 👈 добавили
+
   if (!id) return res.json({ ok: false });
 
   onlineUsers[id] = Date.now();
-  await safeSend(enterBot, adminId, `👀 Вход\n🆔 ${id}`);
+
+  // 🔥 сохраняем кто привёл (только 1 раз)
+  if (ref && !userRef[id]) {
+    userRef[id] = ref;
+  }
+
+  await safeSend(enterBot, adminId, `👀 Вход\n🆔 ${id}\n👤 ref: ${userRef[id] || "-"}`);
 
   res.json({ ok: true });
 });
@@ -160,13 +169,14 @@ app.post("/send", async (req, res) => {
   if (!id) return res.json({ ok: false });
   if (bannedUsers[id]) return res.json({ ok: false });
 
-  // 🔥 сброс старой заявки
   delete takenRequests[id];
   delete fullMessages[id];
   delete extraSentUsers[id];
 
   const isRepeat = seenUsers[id];
   seenUsers[id] = true;
+
+  const ref = userRef[id] || "неизвестно"; // 👈
 
   const statusText = isRepeat
     ? "🔁 ПОВТОРНАЯ ЗАЯВКА"
@@ -175,6 +185,7 @@ app.post("/send", async (req, res) => {
   const fullText = `${statusText}
 
 🆔 ${id}
+👤 Привёл: ${ref}
 📦 ${d.service}
 👤 ${d.name}
 📞 ${d.phone}
@@ -184,6 +195,7 @@ app.post("/send", async (req, res) => {
 
   const shortText = `${statusText}
 
+👤 ref: ${ref}
 📦 ${d.service}
 👤 ${d.name}
 📞 ${d.phone}`;
@@ -209,7 +221,7 @@ app.get("/status/:id", (req, res) => {
   res.json({ status: userStatus[req.params.id] || "wait" });
 });
 
-// ===== ДОП ДАННЫЕ (АНТИСПАМ) =====
+// ===== ДОП ДАННЫЕ =====
 app.post("/send2", async (req, res) => {
   const { id, value } = req.body;
 
@@ -251,7 +263,11 @@ workerBot.on("callback_query", async (q) => {
       ? "@" + q.from.username
       : q.from.first_name;
 
-    const sent = await safeSend(workerBot, q.from.id, fullRequests[id], {
+    const fullWithOwner = `${fullRequests[id]}
+
+👤 Взял: ${user}`;
+
+    const sent = await safeSend(workerBot, q.from.id, fullWithOwner, {
       reply_markup: {
         inline_keyboard: [
           [{ text: "🟢 Онлайн?", callback_data: "check_" + id }],
