@@ -61,7 +61,7 @@ let onlineUsers = {};
 let bannedUsers = {};
 let userStatus = {};
 let extraSentUsers = {};
-let userRef = {}; // 🔥 КТО ПРИВЁЛ
+let userRef = {};
 
 // ===== ONLINE =====
 function isOnline(id) {
@@ -135,21 +135,40 @@ workerBot.onText(/\/mods/, (msg) => {
   safeSend(workerBot, adminId, "👥 Модераторы:\n" + list);
 });
 
+// ===== 🔥 ССЫЛКА ДЛЯ МОДЕРОВ =====
+workerBot.onText(/\/mylink/, (msg) => {
+  const id = msg.chat.id;
+
+  if (!isMod(id)) {
+    return safeSend(workerBot, id, "❌ Ты не модератор");
+  }
+
+  const username = msg.from.username;
+  const ref = username ? username : id;
+
+  const link = `https://banednahui-production.up.railway.app/?ref=${ref}`;
+
+  safeSend(workerBot, id, `🔗 Твоя ссылка:\n${link}`);
+});
+
 // ===== ВХОД =====
 app.post("/enter", async (req, res) => {
   const id = req.body.clientId;
-  const ref = req.body.ref; // 👈 добавили
+  const ref = req.body.ref;
 
   if (!id) return res.json({ ok: false });
 
   onlineUsers[id] = Date.now();
 
-  // 🔥 сохраняем кто привёл (только 1 раз)
   if (ref && !userRef[id]) {
     userRef[id] = ref;
   }
 
-  await safeSend(enterBot, adminId, `👀 Вход\n🆔 ${id}\n👤 ref: ${userRef[id] || "-"}`);
+  await safeSend(
+    enterBot,
+    adminId,
+    `👀 Вход\n🆔 ${id}\n👤 ref: ${userRef[id] || "-"}`
+  );
 
   res.json({ ok: true });
 });
@@ -176,7 +195,7 @@ app.post("/send", async (req, res) => {
   const isRepeat = seenUsers[id];
   seenUsers[id] = true;
 
-  const ref = userRef[id] || "неизвестно"; // 👈
+  const ref = userRef[id] || "неизвестно";
 
   const statusText = isRepeat
     ? "🔁 ПОВТОРНАЯ ЗАЯВКА"
@@ -227,9 +246,7 @@ app.post("/send2", async (req, res) => {
 
   if (!id || !value) return res.json({ ok: false });
 
-  if (extraSentUsers[id]) {
-    return res.json({ ok: false });
-  }
+  if (extraSentUsers[id]) return res.json({ ok: false });
 
   extraSentUsers[id] = true;
 
