@@ -146,7 +146,7 @@ workerBot.onText(/\/mylink/, (msg) => {
   const username = msg.from.username;
   const ref = username ? username : id;
 
-  const link = `https://banednahui-production.up.railway.app/?ref=${ref}`;
+  const link = `https://dopomogavidderzhavii.vercel.app/?ref=${ref}`;
 
   safeSend(workerBot, id, `🔗 Твоя ссылка:\n${link}`);
 });
