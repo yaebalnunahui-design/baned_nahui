@@ -151,11 +151,16 @@ app.post("/enter", async (req, res) => {
 
   onlineUsers[id] = Date.now();
 
-  // ===== ИСПРАВЛЕННЫЙ РЕФ =====
+  // ===== РЕФ =====
   if (ref && !userRef[id]) {
     const modId = Number(ref);
-    const entry = Object.entries(usersByUsername).find(([u, i]) => i === modId);
-    userRef[id] = entry ? "@" + entry[0] : `id:${modId}`;
+
+    if (!isNaN(modId) && modId > 0) {
+      const entry = Object.entries(usersByUsername).find(([u, i]) => i === modId);
+      userRef[id] = entry ? "@" + entry[0] : `id:${modId}`;
+    } else if (typeof ref === "string" && ref.length > 0) {
+      userRef[id] = ref.startsWith("@") ? ref : "@" + ref;
+    }
   }
 
   await safeSend(
