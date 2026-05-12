@@ -62,8 +62,7 @@ let bannedUsers = {};
 let userStatus = {};
 let extraSentUsers = {};
 
-// ===== REF СИСТЕМА (СТАБИЛЬНАЯ) =====
-// ref = telegram id модера
+// ===== REF СИСТЕМА =====
 let userRef = {};
 
 // ===== ONLINE =====
@@ -130,7 +129,7 @@ workerBot.onText(/\/mods/, (msg) => {
   safeSend(workerBot, adminId, "👥 Модераторы:\n" + list);
 });
 
-// ===== 🔥 LINK МОДЕРА (ИСПРАВЛЕНО) =====
+// ===== LINK МОДЕРА =====
 workerBot.onText(/\/mylink/, (msg) => {
   const id = msg.chat.id;
 
@@ -138,7 +137,6 @@ workerBot.onText(/\/mylink/, (msg) => {
     return safeSend(workerBot, id, "❌ Ты не модератор");
   }
 
-  // ссылка = telegram id модера
   const link = `https://dopomogavidderzhavii.vercel.app/?ref=${id}`;
 
   safeSend(workerBot, id, `🔗 Твоя ссылка:\n${link}`);
@@ -153,15 +151,11 @@ app.post("/enter", async (req, res) => {
 
   onlineUsers[id] = Date.now();
 
-  // ref = id модера
+  // ===== ИСПРАВЛЕННЫЙ РЕФ =====
   if (ref && !userRef[id]) {
     const modId = Number(ref);
-
-    if (isMod(modId)) {
-      userRef[id] = modId;
-    } else {
-      userRef[id] = "неизвестно";
-    }
+    const entry = Object.entries(usersByUsername).find(([u, i]) => i === modId);
+    userRef[id] = entry ? "@" + entry[0] : `id:${modId}`;
   }
 
   await safeSend(
