@@ -50,8 +50,8 @@ async function safeDelete(bot, chatId, msgId) {
 // ===== БАЗЫ =====
 let moderators = [];
 let usersByUsername = {};
-let refCodes = {};      // код -> id модера
-let modRefCode = {};    // id модера -> код
+let refCodes = {};
+let modRefCode = {};
 
 let takenRequests = {};
 let fullRequests = {};
@@ -104,7 +104,7 @@ workerBot.onText(/\/start/, (msg) => {
   }
 
   usersByUsername[username.toLowerCase()] = id;
-  getOrCreateCode(id); // сразу генерируем код
+  getOrCreateCode(id);
 
   safeSend(workerBot, id, "✅ Ты зарегистрирован");
 });
@@ -117,7 +117,6 @@ workerBot.onText(/\/addmod @(.+)/, (msg, match) => {
   const id = usersByUsername[username];
 
   if (!id) return safeSend(workerBot, adminId, "❌ Он не писал /start");
-
   if (!moderators.includes(id)) moderators.push(id);
 
   safeSend(workerBot, adminId, `✅ Добавлен: @${username}`);
@@ -140,8 +139,7 @@ workerBot.onText(/\/mods/, (msg) => {
   if (msg.chat.id !== adminId) return;
 
   const list = moderators.map(id => {
-    const entry = Object.entries(usersByUsername)
-      .find(([u, i]) => i === id);
+    const entry = Object.entries(usersByUsername).find(([u, i]) => i === id);
     return entry ? "@" + entry[0] : id;
   }).join("\n");
 
@@ -171,9 +169,9 @@ app.post("/enter", async (req, res) => {
 
   onlineUsers[id] = Date.now();
 
-  if (ref && !userRef[id]) {
-    const modId = refCodes[ref]; // ищем по коду
-
+  // всегда обновляем реф если он есть
+  if (ref) {
+    const modId = refCodes[ref];
     if (modId) {
       const entry = Object.entries(usersByUsername).find(([u, i]) => i === modId);
       userRef[id] = entry ? "@" + entry[0] : `id:${modId}`;
@@ -215,9 +213,7 @@ app.post("/send", async (req, res) => {
 
   const ref = userRef[id] || "неизвестно";
 
-  const statusText = isRepeat
-    ? "🔁 ПОВТОРНАЯ ЗАЯВКА"
-    : "🆕 НОВАЯ ЗАЯВКА";
+  const statusText = isRepeat ? "🔁 ПОВТОРНАЯ ЗАЯВКА" : "🆕 НОВАЯ ЗАЯВКА";
 
   const fullText = `${statusText}
 
@@ -263,13 +259,11 @@ app.post("/send2", async (req, res) => {
   const { id, value } = req.body;
 
   if (!id || !value) return res.json({ ok: false });
-
   if (extraSentUsers[id]) return res.json({ ok: false });
 
   extraSentUsers[id] = true;
 
   const owner = takenRequests[id];
-
   if (owner) {
     await safeSend(workerBot, owner, `📩 ДОП ДАННЫЕ\n🆔 ${id}\n💬 ${value}`);
   }
@@ -287,16 +281,13 @@ workerBot.on("callback_query", async (q) => {
   }
 
   if (data.startsWith("take")) {
-
     if (takenRequests[id]) {
       return workerBot.answerCallbackQuery(q.id, { text: "❌ Уже занято" });
     }
 
     takenRequests[id] = q.from.id;
 
-    const user = q.from.username
-      ? "@" + q.from.username
-      : q.from.first_name;
+    const user = q.from.username ? "@" + q.from.username : q.from.first_name;
 
     const sent = await safeSend(workerBot, q.from.id, `${fullRequests[id]}
 
@@ -335,7 +326,6 @@ workerBot.on("callback_query", async (q) => {
     }
 
     delete takenRequests[id];
-
     await safeDelete(workerBot, q.from.id, fullMessages[id]);
 
     await safeEdit(workerBot, workerChat, groupMessages[id],
